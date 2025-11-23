@@ -13,7 +13,10 @@ from aipod.config import SERVICES, ServiceSpec, get_service, list_service_names
 from aipod.logging import console, status_spinner
 from aipod.system import CheckResult, check_dependency, detect_gpu
 
-app = typer.Typer(help="Orchestrate local AI services (Ollama, Open WebUI) with Podman + UV.")
+app = typer.Typer(
+    help="Orchestrate local AI services (Ollama, Open WebUI) with Podman + UV.",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 
 
 def _resolve_services(names: Optional[List[str]]) -> List[ServiceSpec]:
