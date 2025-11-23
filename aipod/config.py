@@ -14,6 +14,7 @@ class ServiceSpec:
     env: Dict[str, str] = field(default_factory=dict)
     volumes: List[Tuple[str, str]] = field(default_factory=list)  # host volume name -> container path
     needs_gpu: bool = False
+    health_path: Optional[str] = None
 
 
 OLLAMA_VOLUME = "aipod_ollama_data"
@@ -32,6 +33,7 @@ SERVICES: Dict[str, ServiceSpec] = {
         },
         volumes=[(OLLAMA_VOLUME, "/root/.ollama")],
         needs_gpu=True,
+        health_path="/api/tags",
     ),
     "open-webui": ServiceSpec(
         name="open-webui",
@@ -43,6 +45,7 @@ SERVICES: Dict[str, ServiceSpec] = {
             "OLLAMA_BASE_URL": "http://host.containers.internal:11434",
         },
         volumes=[(OPENWEBUI_VOLUME, "/app/backend/data")],
+        health_path="/",
     ),
 }
 

@@ -20,7 +20,7 @@ Note: use `./podcli ...` for a convenient wrapper that prefers `uv run` (falls b
 - `init` — checks dependencies (podman, podman-compose optional, uv), ensures volumes, and pulls images.
 - `start [service...]` — ensures volumes/images, starts pods (default both); GPU auto-detected unless `--cpu`.
 - `stop [service...]` — stops pods; `--remove` removes pods after stop.
-- `status [service...]` — reports pod status, ports, and container counts.
+- `status [service...]` — reports pod status, ports, container counts, and a simple HTTP ping.
 - `logs [service...]` — tails logs; supports `--follow`, `--since`, `--lines`.
 - `version` — prints CLI version.
 

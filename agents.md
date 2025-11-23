@@ -7,7 +7,7 @@ Provide a Rich + Typer-powered CLI (`aipod.py`) that orchestrates local AI servi
 - `init`: Verify dependencies (podman, podman-compose, uv, optional nvidia-smi), create volumes, pull images, summarize readiness.
 - `start [service...]`: Ensure volumes/images, then launch pods (default both). GPU auto-detected and attached to Ollama; CPU fallback allowed.
 - `stop [service...]`: Graceful stop; optional removal of pods while preserving volumes by default.
-- `status [service...]`: Rich table showing pod/container state, ports, uptime, health.
+- `status [service...]`: Rich table showing pod/container state, ports, uptime, and an HTTP ping per service.
 - `logs [service...]`: Tail logs for specified services or all; supports follow/since/lines.
 - Optional `doctor`: Re-run checks without creating resources.
 

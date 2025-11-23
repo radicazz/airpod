@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import http.client
 from typing import List, Optional
 
 import typer
@@ -151,11 +152,12 @@ def status(service: Optional[List[str]] = typer.Argument(None, help="Services to
     table.add_column("Status")
     table.add_column("Ports")
     table.add_column("Containers")
+    table.add_column("Ping")
 
     for spec in specs:
         row = pod_rows.get(spec.pod)
         if not row:
-            table.add_row(spec.name, spec.pod, "[warn]absent", "-", "-")
+            table.add_row(spec.name, spec.pod, "[warn]absent", "-", "-", "-")
             continue
         inspect_info = podman.pod_inspect(spec.pod) or {}
         port_bindings = inspect_info.get("InfraConfig", {}).get("PortBindings", {}) if inspect_info else {}
@@ -166,9 +168,43 @@ def status(service: Optional[List[str]] = typer.Argument(None, help="Services to
                 ports.append(f"{host_port}->{container_port}")
         ports_display = ", ".join(ports) if ports else (", ".join(row.get("Ports", [])) if row.get("Ports") else "-")
         containers = str(len(inspect_info.get("Containers", []))) if inspect_info else str(row.get("NumberOfContainers", "?") or "?")
-        table.add_row(spec.name, spec.pod, row.get("Status", "?"), ports_display, containers)
+        host_port = _extract_host_port(spec, port_bindings)
+        ping_status = _ping_service(spec, host_port) if host_port else "-"
+        table.add_row(spec.name, spec.pod, row.get("Status", "?"), ports_display, containers, ping_status)
 
     console.print(table)
+
+
+def _extract_host_port(spec: ServiceSpec, port_bindings) -> Optional[int]:
+    # Prefer actual bindings; fallback to configured host port.
+    if port_bindings:
+        first_binding = next(iter(port_bindings.values()), None)
+        if first_binding:
+            host_port = (first_binding[0] or {}).get("HostPort")
+            if host_port:
+                try:
+                    return int(host_port)
+                except ValueError:
+                    return None
+    if spec.ports:
+        return spec.ports[0][0]
+    return None
+
+
+def _ping_service(spec: ServiceSpec, port: Optional[int]) -> str:
+    if not spec.health_path or port is None:
+        return "-"
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2.0)
+        conn.request("GET", spec.health_path)
+        resp = conn.getresponse()
+        code = resp.status
+        conn.close()
+        if 200 <= code < 400:
+            return "[ok]ok"
+        return f"[warn]{code}"
+    except Exception as exc:  # noqa: BLE001
+        return f"[warn]{type(exc).__name__}"
 
 
 @app.command()
