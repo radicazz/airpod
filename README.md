@@ -14,7 +14,7 @@ Rich, user-friendly CLI for orchestrating local AI services with Podman and UV. 
 3. `uv run aipod.py start` to launch Ollama + Open WebUI pods.
 4. `uv run aipod.py status` to view health and ports; `uv run aipod.py logs` to inspect.
 
-Note: running `python aipod.py ...` will re-exec under `uv run` automatically when `uv` is available (set `AIPOD_NO_UV_REEXEC=1` to opt out).
+Note: use `./podcli ...` for a convenient wrapper that prefers `uv run` (falls back to `python`).
 
 ## Commands (current scaffold)
 - `init` — checks dependencies (podman, podman-compose optional, uv), ensures volumes, and pulls images.
