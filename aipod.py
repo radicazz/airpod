@@ -40,6 +40,13 @@ def _print_checks(checks: List[CheckResult], gpu_available: bool, gpu_detail: st
     console.print(table)
 
 
+def _ensure_podman_available() -> None:
+    check = check_dependency("podman", ["--version"])
+    if not check.ok:
+        console.print("[error]podman is required; install it and re-run.[/]")
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def version() -> None:
     """Show CLI version."""
@@ -80,8 +87,18 @@ def start(
 ) -> None:
     """Start pods for specified services (default: ollama + open-webui)."""
     specs = _resolve_services(service)
+    _ensure_podman_available()
     gpu_available, gpu_detail = detect_gpu()
     console.print(f"[info]GPU: {'enabled' if gpu_available else 'not detected'} ({gpu_detail})[/]")
+
+    with status_spinner("Ensuring volumes"):
+        for spec in specs:
+            for volume, _ in spec.volumes:
+                podman.ensure_volume(volume)
+
+    with status_spinner("Pulling images"):
+        for spec in specs:
+            podman.pull_image(spec.image)
 
     for spec in specs:
         with status_spinner(f"Creating pod {spec.pod}"):
