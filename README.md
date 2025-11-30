@@ -45,6 +45,13 @@ airpod stop
 
 Feel free to run `airpod --help` to see a full list of available commands.
 
+## Data locations
+
+- Podman bind mounts live under `volumes/` in the project directory by default, keeping large model and WebUI files beside the CLI.
+- Secrets and other configs live under `configs/` (for example `configs/webui_secret`).
+- Both directories are gitignored; deleting them resets your environment.
+- For global installs where the package directory is read-only, set `AIRPOD_HOME=/path/to/state` before running `airpod` to relocate both folders (otherwise the CLI falls back to `~/.config/airpod`).
+
 ## License
 
 Check out [LICENSE](./LICENSE) for more details.

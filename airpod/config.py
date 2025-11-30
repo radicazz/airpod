@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from airpod import state
+
 
 @dataclass
 class ServiceSpec:
@@ -17,8 +19,8 @@ class ServiceSpec:
     health_path: Optional[str] = None
 
 
-OLLAMA_VOLUME = "airpod_ollama_data"
-OPENWEBUI_VOLUME = "airpod_webui_data"
+OLLAMA_VOLUME = str(state.volume_path("ollama"))
+OPENWEBUI_VOLUME = str(state.volume_path("open-webui"))
 
 SERVICES: Dict[str, ServiceSpec] = {
     "ollama": ServiceSpec(

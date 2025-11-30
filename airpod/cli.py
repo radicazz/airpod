@@ -79,7 +79,10 @@ def init() -> None:
     with status_spinner("Ensuring volumes"):
         for spec in SERVICES.values():
             for volume, _ in spec.volumes:
-                podman.ensure_volume(volume)
+                if state.is_bind_mount(volume):
+                    state.ensure_volume_source(volume)
+                else:
+                    podman.ensure_volume(volume)
 
     with status_spinner("Pulling images"):
         for spec in SERVICES.values():
@@ -88,7 +91,7 @@ def init() -> None:
     # Security: ensure a persistent secret key for Open WebUI sessions.
     with status_spinner("Preparing Open WebUI secret"):
         secret = state.ensure_webui_secret()
-    console.print(f"[info]Open WebUI secret stored at {state.config_dir() / 'webui_secret'}[/]")
+    console.print(f"[info]Open WebUI secret stored at {state.webui_secret_path()}[/]")
 
     console.print(Panel.fit("[ok]init complete. pods are ready to start.[/]", border_style="green"))
 
@@ -107,7 +110,10 @@ def start(
     with status_spinner("Ensuring volumes"):
         for spec in specs:
             for volume, _ in spec.volumes:
-                podman.ensure_volume(volume)
+                if state.is_bind_mount(volume):
+                    state.ensure_volume_source(volume)
+                else:
+                    podman.ensure_volume(volume)
 
     with status_spinner("Pulling images"):
         for spec in specs:

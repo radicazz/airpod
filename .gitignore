@@ -32,3 +32,5 @@ build/
 # Podman / containers
 podman-machine-default*
 uv.lock
+volumes/
+configs/
