@@ -41,6 +41,23 @@ def ensure_volume(name: str) -> None:
         raise PodmanError(f"failed to create volume {name}: {exc}") from exc
 
 
+def network_exists(name: str) -> bool:
+    try:
+        _run(["network", "inspect", name])
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def ensure_network(name: str) -> None:
+    if network_exists(name):
+        return
+    try:
+        _run(["network", "create", name], capture=False)
+    except subprocess.CalledProcessError as exc:
+        raise PodmanError(f"failed to create network {name}: {exc}") from exc
+
+
 def pull_image(image: str) -> None:
     try:
         _run(["pull", image], capture=False)
@@ -64,10 +81,10 @@ def container_exists(name: str) -> bool:
         return False
 
 
-def ensure_pod(pod: str, ports: Iterable[tuple[int, int]]) -> None:
+def ensure_pod(pod: str, ports: Iterable[tuple[int, int]], network: str = "airpod_network") -> None:
     if pod_exists(pod):
         return
-    args = ["pod", "create", "--name", pod]
+    args = ["pod", "create", "--name", pod, "--network", network]
     for host, container in ports:
         args.extend(["-p", f"{host}:{container}"])
     try:

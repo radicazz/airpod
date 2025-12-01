@@ -76,6 +76,9 @@ def init() -> None:
         )
         raise typer.Exit(code=1)
 
+    with status_spinner("Ensuring network"):
+        podman.ensure_network("airpod_network")
+
     with status_spinner("Ensuring volumes"):
         for spec in SERVICES.values():
             for volume, _ in spec.volumes:
@@ -106,6 +109,9 @@ def start(
     _ensure_podman_available()
     gpu_available, gpu_detail = detect_gpu()
     console.print(f"[info]GPU: {'enabled' if gpu_available else 'not detected'} ({gpu_detail})[/]")
+
+    with status_spinner("Ensuring network"):
+        podman.ensure_network("airpod_network")
 
     with status_spinner("Ensuring volumes"):
         for spec in specs:
