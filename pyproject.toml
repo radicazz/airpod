@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "airpod"
+name = "airpods"
 version = "0.2.0"
 description = "Rich, user-friendly CLI for orchestrating local AI services with Podman and UV."
 readme = "README.md"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-airpod = "airpod.cli:main"
+airpods = "airpods.cli:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true

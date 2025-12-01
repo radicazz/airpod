@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Union
 
-STATE_ROOT_ENV = "AIRPOD_HOME"
+STATE_ROOT_ENV = "AIRPODS_HOME"
 _PROJECT_MARKERS = ("pyproject.toml", ".git")
 
 
@@ -28,8 +28,8 @@ def state_root() -> Path:
     if repo_root and os.access(repo_root, os.W_OK) and not xdg_base:
         return repo_root
     if xdg_base:
-        return Path(xdg_base).expanduser() / "airpod"
-    return Path.home() / ".config" / "airpod"
+        return Path(xdg_base).expanduser() / "airpods"
+    return Path.home() / ".config" / "airpods"
 
 
 def configs_dir() -> Path:

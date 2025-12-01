@@ -1,7 +1,7 @@
 # Agents & Plan
 
 ## Intent
-Provide a Rich + Typer-powered CLI (`airpod/cli.py`, installed as the `airpod` command via uv tools) that orchestrates local AI services via Podman. Initial services: Ollama (GGUF-capable) and Open WebUI wired to Ollama. Future additions: ComfyUI and others.
+Provide a Rich + Typer-powered CLI (`airpods/cli.py`, installed as the `airpods` command via uv tools) that orchestrates local AI services via Podman. Initial services: Ollama (GGUF-capable) and Open WebUI wired to Ollama. Future additions: ComfyUI and others.
 
 ## Command Surface (planned)
 - `init`: Verify dependencies (podman, podman-compose, uv, optional nvidia-smi), create volumes, pull images, summarize readiness.
@@ -12,16 +12,16 @@ Provide a Rich + Typer-powered CLI (`airpod/cli.py`, installed as the `airpod` c
 - Optional `doctor`: Re-run checks without creating resources.
 
 ## Architecture Notes
-- Modules: `airpod/cli.py` (Typer entry + wiring), `airpod/podman.py` (subprocess wrapper), `airpod/system.py` (env checks, GPU detection), `airpod/config.py` (service specs), `airpod/logging.py` (Rich console), `podcli` (uv/python wrapper script).
+- Modules: `airpods/cli.py` (Typer entry + wiring), `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs), `airpods/logging.py` (Rich console), `podcli` (uv/python wrapper script).
 - Pod specs include names, images, ports, env, volumes, and GPU requirements. Easy to extend mapping in `config.py` for new services.
 - Errors surfaced with clear remediation (install Podman, start podman machine, check GPU drivers).
 
 ## Data & Images
-- Volumes: `airpod_ollama_data` for models, `airpod_webui_data` for Open WebUI data.
+- Volumes: `airpods_ollama_data` for models, `airpods_webui_data` for Open WebUI data.
 - Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`; pulled during `init`/`start`.
-- Secrets: Open WebUI secret persisted at `~/.config/airpod/webui_secret` (or `$XDG_CONFIG_HOME/airpod/webui_secret`) during `init`, injected on start.
+- Secrets: Open WebUI secret persisted at `~/.config/airpods/webui_secret` (or `$XDG_CONFIG_HOME/airpods/webui_secret`) during `init`, injected on start.
 - Networking: Open WebUI targets Ollama via host-published `http://host.containers.internal:11434`.
-- Secrets: Open WebUI `WEBUI_SECRET_KEY` generated and stored at `~/.config/airpod/webui_secret` (or `$XDG_CONFIG_HOME/airpod`).
+- Secrets: Open WebUI `WEBUI_SECRET_KEY` generated and stored at `~/.config/airpods/webui_secret` (or `$XDG_CONFIG_HOME/airpods`).
 
 ## Testing Approach
 - Unit tests mock subprocess interactions to validate command flow and flags.

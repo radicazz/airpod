@@ -5,8 +5,8 @@ from __future__ import annotations
 from rich.panel import Panel
 from rich.table import Table
 
-from airpod.logging import console
-from airpod.services import EnvironmentReport
+from airpods.logging import console
+from airpods.services import EnvironmentReport
 
 
 def show_environment(report: EnvironmentReport) -> None:

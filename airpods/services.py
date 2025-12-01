@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from airpod import podman, state
-from airpod.system import CheckResult, check_dependency, detect_gpu
+from airpods import podman, state
+from airpods.system import CheckResult, check_dependency, detect_gpu
 
 
 class UnknownServiceError(ValueError):
@@ -91,7 +91,7 @@ class EnvironmentReport:
 class ServiceManager:
     """Performs the common Podman orchestration tasks."""
 
-    def __init__(self, registry: ServiceRegistry, network_name: str = "airpod_network"):
+    def __init__(self, registry: ServiceRegistry, network_name: str = "airpods_network"):
         self.registry = registry
         self.network_name = network_name
 

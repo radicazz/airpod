@@ -81,7 +81,7 @@ def container_exists(name: str) -> bool:
         return False
 
 
-def ensure_pod(pod: str, ports: Iterable[tuple[int, int]], network: str = "airpod_network") -> None:
+def ensure_pod(pod: str, ports: Iterable[tuple[int, int]], network: str = "airpods_network") -> None:
     if pod_exists(pod):
         return
     args = ["pod", "create", "--name", pod, "--network", network]
