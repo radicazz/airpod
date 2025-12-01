@@ -7,7 +7,7 @@ User-friendly CLI for orchestrating local AI services with ease.
 - One-command setup and start: `uv tool install --from . airpod` then `airpod init` / `airpod start`.
 - GPU-aware: detect NVIDIA GPUs and attach to pods when available; gracefully fall back to CPU.
 - Opinionated but extensible: defaults for ports/volumes/images, easy to extend with future services like ComfyUI.
-- Helpful output: Rich-powered status tables, clear errors, and direct pointers to next steps.
+- Helpful output: unified Rich/Typer experience with consistent tables, panels, and remediation hints across every command.
 
 ## Getting Started
 
@@ -47,10 +47,9 @@ Feel free to run `airpod --help` to see a full list of available commands.
 
 ## Data locations
 
-- Podman bind mounts live under `volumes/` in the project directory by default, keeping large model and WebUI files beside the CLI.
-- Secrets and other configs live under `configs/` (for example `configs/webui_secret`).
-- Both directories are gitignored; deleting them resets your environment.
-- For global installs where the package directory is read-only, set `AIRPOD_HOME=/path/to/state` before running `airpod` to relocate both folders (otherwise the CLI falls back to `~/.config/airpod`).
+- Podman named volumes keep service data persistent (`airpod_ollama_data`, `airpod_webui_data`), so you can prune pods without losing models or WebUI history.
+- Secrets and other configs live under `~/.config/airpod` (or `$AIRPOD_HOME` / `$XDG_CONFIG_HOME` when set); for example the Open WebUI secret resides at `webui_secret` inside that folder.
+- Both volumes and configs are outside your git checkout by default, keeping the repo clean. Remove them via `podman volume rm` or by deleting the config folder to reset your environment.
 
 ## License
 

@@ -5,50 +5,37 @@ import http.client
 from typing import List, Optional
 
 import typer
-from rich.panel import Panel
 from rich.table import Table
 
 from airpod import __version__
-from airpod import podman
-from airpod.config import SERVICES, ServiceSpec, get_service, list_service_names
+from airpod import podman, ui
+from airpod.config import REGISTRY
 from airpod.logging import console, status_spinner
 from airpod import state
-from airpod.system import CheckResult, check_dependency, detect_gpu
+from airpod.services import ServiceManager, ServiceSpec, UnknownServiceError
+from airpod.system import check_dependency, detect_gpu
 
 app = typer.Typer(
     help="Orchestrate local AI services (Ollama, Open WebUI) with Podman + UV.",
     context_settings={"help_option_names": ["-h", "--help"]},
+    rich_markup_mode="rich",
 )
+
+manager = ServiceManager(REGISTRY)
 
 
 def _resolve_services(names: Optional[List[str]]) -> List[ServiceSpec]:
-    if not names:
-        return list(SERVICES.values())
-    resolved: List[ServiceSpec] = []
-    for name in names:
-        spec = get_service(name)
-        if not spec:
-            raise typer.BadParameter(f"unknown service '{name}'. available: {', '.join(list_service_names())}")
-        resolved.append(spec)
-    return resolved
-
-
-def _print_checks(checks: List[CheckResult], gpu_available: bool, gpu_detail: str) -> None:
-    table = Table(title="Environment", show_header=True, header_style="bold cyan")
-    table.add_column("Check")
-    table.add_column("Status")
-    table.add_column("Details")
-    for check in checks:
-        status = "[ok]ok" if check.ok else "[error]missing"
-        table.add_row(check.name, status, check.detail)
-    table.add_row("gpu (nvidia)", "[ok]ok" if gpu_available else "[warn]not detected", gpu_detail)
-    console.print(table)
+    try:
+        return manager.resolve(names)
+    except UnknownServiceError as exc:  # noqa: B904
+        raise typer.BadParameter(str(exc))
 
 
 def _ensure_podman_available() -> None:
-    check = check_dependency("podman", ["--version"])
-    if not check.ok:
-        console.print("[error]podman is required; install it and re-run.[/]")
+    try:
+        manager.ensure_podman()
+    except podman.PodmanError as exc:
+        console.print(f"[error]{exc}[/]")
         raise typer.Exit(code=1)
 
 
@@ -61,42 +48,30 @@ def version() -> None:
 @app.command()
 def init() -> None:
     """Verify tools, create volumes, and pre-pull images."""
-    checks = [
-        check_dependency("podman", ["--version"]),
-        check_dependency("podman-compose", ["--version"]),
-        check_dependency("uv", ["--version"]),
-    ]
-    gpu_available, gpu_detail = detect_gpu()
-    _print_checks(checks, gpu_available, gpu_detail)
+    report = manager.report_environment()
+    ui.show_environment(report)
 
-    missing = [check.name for check in checks if not check.ok]
-    if missing:
+    if report.missing:
         console.print(
-            f"[error]The following dependencies are required: {', '.join(missing)}. Install them and re-run init.[/]"
+            f"[error]The following dependencies are required: {', '.join(report.missing)}. Install them and re-run init.[/]"
         )
         raise typer.Exit(code=1)
 
     with status_spinner("Ensuring network"):
-        podman.ensure_network("airpod_network")
+        manager.ensure_network()
 
     with status_spinner("Ensuring volumes"):
-        for spec in SERVICES.values():
-            for volume, _ in spec.volumes:
-                if state.is_bind_mount(volume):
-                    state.ensure_volume_source(volume)
-                else:
-                    podman.ensure_volume(volume)
+        manager.ensure_volumes(manager.resolve(None))
 
     with status_spinner("Pulling images"):
-        for spec in SERVICES.values():
-            podman.pull_image(spec.image)
+        manager.pull_images(manager.resolve(None))
 
     # Security: ensure a persistent secret key for Open WebUI sessions.
     with status_spinner("Preparing Open WebUI secret"):
         secret = state.ensure_webui_secret()
     console.print(f"[info]Open WebUI secret stored at {state.webui_secret_path()}[/]")
 
-    console.print(Panel.fit("[ok]init complete. pods are ready to start.[/]", border_style="green"))
+    ui.success_panel("init complete. pods are ready to start.")
 
 
 @app.command()
@@ -111,37 +86,19 @@ def start(
     console.print(f"[info]GPU: {'enabled' if gpu_available else 'not detected'} ({gpu_detail})[/]")
 
     with status_spinner("Ensuring network"):
-        podman.ensure_network("airpod_network")
+        manager.ensure_network()
 
     with status_spinner("Ensuring volumes"):
-        for spec in specs:
-            for volume, _ in spec.volumes:
-                if state.is_bind_mount(volume):
-                    state.ensure_volume_source(volume)
-                else:
-                    podman.ensure_volume(volume)
+        manager.ensure_volumes(specs)
 
     with status_spinner("Pulling images"):
-        for spec in specs:
-            podman.pull_image(spec.image)
+        manager.pull_images(specs)
 
     for spec in specs:
-        with status_spinner(f"Creating pod {spec.pod}"):
-            podman.ensure_pod(spec.pod, spec.ports)
         with status_spinner(f"Starting {spec.name}"):
-            use_gpu = spec.needs_gpu and gpu_available and not force_cpu
-            env = dict(spec.env)
-            if spec.name == "open-webui":
-                env["WEBUI_SECRET_KEY"] = state.ensure_webui_secret()
-            podman.run_container(
-                pod=spec.pod,
-                name=spec.container,
-                image=spec.image,
-                env=env,
-                volumes=spec.volumes,
-                gpu=use_gpu,
-            )
+            manager.start_service(spec, gpu_available=gpu_available, force_cpu=force_cpu)
         console.print(f"[ok]{spec.name} running in pod {spec.pod}[/]")
+    ui.success_panel(f"start complete: {', '.join(spec.name for spec in specs)}")
 
 
 @app.command()
@@ -154,15 +111,13 @@ def stop(
     specs = _resolve_services(service)
     _ensure_podman_available()
     for spec in specs:
-        if not podman.pod_exists(spec.pod):
+        with status_spinner(f"Stopping {spec.pod}"):
+            existed = manager.stop_service(spec, remove=remove, timeout=timeout)
+        if not existed:
             console.print(f"[warn]{spec.pod} not found; skipping[/]")
             continue
-        with status_spinner(f"Stopping {spec.pod}"):
-            podman.stop_pod(spec.pod, timeout=timeout)
-        if remove:
-            with status_spinner(f"Removing {spec.pod}"):
-                podman.remove_pod(spec.pod)
         console.print(f"[ok]{spec.name} stopped[/]")
+    ui.success_panel(f"stop complete: {', '.join(spec.name for spec in specs)}")
 
 
 @app.command()
@@ -170,7 +125,7 @@ def status(service: Optional[List[str]] = typer.Argument(None, help="Services to
     """Show pod status."""
     specs = _resolve_services(service)
     _ensure_podman_available()
-    pod_rows = {row.get("Name"): row for row in podman.pod_status()}
+    pod_rows = manager.pod_status_rows()
 
     table = Table(title="Pods", header_style="bold cyan")
     table.add_column("Service")
@@ -185,15 +140,14 @@ def status(service: Optional[List[str]] = typer.Argument(None, help="Services to
         if not row:
             table.add_row(spec.name, spec.pod, "[warn]absent", "-", "-", "-")
             continue
-        inspect_info = podman.pod_inspect(spec.pod) or {}
-        port_bindings = inspect_info.get("InfraConfig", {}).get("PortBindings", {}) if inspect_info else {}
+        port_bindings = manager.service_ports(spec)
         ports = []
         for container_port, bindings in port_bindings.items():
             for binding in bindings or []:
                 host_port = binding.get("HostPort", "")
                 ports.append(f"{host_port}->{container_port}")
         ports_display = ", ".join(ports) if ports else (", ".join(row.get("Ports", [])) if row.get("Ports") else "-")
-        containers = str(len(inspect_info.get("Containers", []))) if inspect_info else str(row.get("NumberOfContainers", "?") or "?")
+        containers = str(row.get("NumberOfContainers", "?") or "?")
         host_port = _extract_host_port(spec, port_bindings)
         ping_status = _ping_service(spec, host_port) if host_port else "-"
         table.add_row(spec.name, spec.pod, row.get("Status", "?"), ports_display, containers, ping_status)
@@ -249,7 +203,7 @@ def logs(
     for idx, spec in enumerate(specs):
         if idx > 0:
             console.print()
-        console.print(Panel.fit(f"[info]Logs for {spec.name} ({spec.container})[/]", border_style="cyan"))
+        ui.info_panel(f"Logs for {spec.name} ({spec.container})")
         code = podman.stream_logs(spec.container, follow=follow, tail=lines, since=since)
         if code != 0:
             console.print(f"[warn]podman logs exited with code {code} for {spec.container}[/]")

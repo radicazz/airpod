@@ -1,29 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 from airpod import state
+from airpod.services import ServiceRegistry, ServiceSpec, VolumeMount
 
 
-@dataclass
-class ServiceSpec:
-    name: str
-    pod: str
-    container: str
-    image: str
-    ports: List[Tuple[int, int]] = field(default_factory=list)
-    env: Dict[str, str] = field(default_factory=dict)
-    volumes: List[Tuple[str, str]] = field(default_factory=list)  # host volume name -> container path
-    needs_gpu: bool = False
-    health_path: Optional[str] = None
+def _webui_secret_env() -> Dict[str, str]:
+    return {"WEBUI_SECRET_KEY": state.ensure_webui_secret()}
 
 
-OLLAMA_VOLUME = str(state.volume_path("ollama"))
-OPENWEBUI_VOLUME = str(state.volume_path("open-webui"))
-
-SERVICES: Dict[str, ServiceSpec] = {
-    "ollama": ServiceSpec(
+_SERVICE_SPECS: List[ServiceSpec] = [
+    ServiceSpec(
         name="ollama",
         pod="airpod-ollama",
         container="airpod-ollama-0",
@@ -33,11 +21,11 @@ SERVICES: Dict[str, ServiceSpec] = {
             "OLLAMA_ORIGINS": "*",
             "OLLAMA_HOST": "0.0.0.0",
         },
-        volumes=[(OLLAMA_VOLUME, "/root/.ollama")],
+        volumes=[VolumeMount("airpod_ollama_data", "/root/.ollama")],
         needs_gpu=True,
         health_path="/api/tags",
     ),
-    "open-webui": ServiceSpec(
+    ServiceSpec(
         name="open-webui",
         pod="airpod-open-webui",
         container="airpod-open-webui-0",
@@ -47,15 +35,11 @@ SERVICES: Dict[str, ServiceSpec] = {
             # Reach Ollama via the host-published port.
             "OLLAMA_BASE_URL": "http://host.containers.internal:11434",
         },
-        volumes=[(OPENWEBUI_VOLUME, "/app/backend/data")],
+        env_factory=_webui_secret_env,
+        volumes=[VolumeMount("airpod_webui_data", "/app/backend/data")],
         health_path="/",
     ),
-}
+]
 
 
-def list_service_names() -> List[str]:
-    return list(SERVICES.keys())
-
-
-def get_service(name: str) -> Optional[ServiceSpec]:
-    return SERVICES.get(name)
+REGISTRY = ServiceRegistry(_SERVICE_SPECS)

@@ -46,24 +46,8 @@ def ensure_config_dir() -> Path:
     return configs_dir()
 
 
-def volumes_dir() -> Path:
-    path = state_root() / "volumes"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def volume_path(name: str) -> Path:
-    path = volumes_dir() / name
-    path.mkdir(parents=True, exist_ok=True)
-    return path.resolve()
-
-
 def _normalize_source(path: Union[str, os.PathLike[str]]) -> Path:
     return Path(path).expanduser()
-
-
-def is_bind_mount(source: Union[str, os.PathLike[str]]) -> bool:
-    return _normalize_source(source).is_absolute()
 
 
 def ensure_volume_source(source: Union[str, os.PathLike[str]]) -> Path:
