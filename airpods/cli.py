@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import http.client
-from typing import List, Optional
+from typing import Any, Optional
 
 import click
 import typer
@@ -18,6 +18,11 @@ from airpods.system import check_dependency, detect_gpu
 HELP_OPTION_NAMES = ["-h", "--help"]
 COMMAND_CONTEXT = {"help_option_names": HELP_OPTION_NAMES}
 
+# Default values for service operations
+DEFAULT_STOP_TIMEOUT = 10
+DEFAULT_LOG_LINES = 200
+DEFAULT_PING_TIMEOUT = 2.0
+
 app = typer.Typer(
     help="Orchestrate local AI services (Ollama, Open WebUI) with Podman + UV.",
     context_settings={"help_option_names": []},
@@ -31,7 +36,7 @@ COMMAND_ALIASES = {
     "down": "stop",
     "ps": "status",
 }
-COMMAND_ALIAS_GROUPS: dict[str, List[str]] = {}
+COMMAND_ALIAS_GROUPS: dict[str, list[str]] = {}
 for alias, canonical in COMMAND_ALIASES.items():
     COMMAND_ALIAS_GROUPS.setdefault(canonical, []).append(alias)
 for alias_list in COMMAND_ALIAS_GROUPS.values():
@@ -48,7 +53,9 @@ HELP_EXAMPLES = [
 
 def _show_root_help(ctx: typer.Context) -> None:
     console.print(f"[bold]airpods[/bold] v{__version__}")
-    console.print("Orchestrate local AI services (Ollama, Open WebUI) with Podman + UV.")
+    console.print(
+        "Orchestrate local AI services (Ollama, Open WebUI) with Podman + UV."
+    )
     console.print()
     console.print("[bold cyan]Usage[/bold cyan]")
     console.print("  airpods [OPTIONS] COMMAND [ARGS]...\n")
@@ -62,27 +69,29 @@ def _show_root_help(ctx: typer.Context) -> None:
     console.print(_build_examples_table())
 
 
-def _build_command_table(ctx: typer.Context) -> Table:
+def _build_help_table(ctx: typer.Context, row_generator) -> Table:
+    """Build a Rich table for help output."""
     table = Table.grid(padding=(0, 3))
     table.add_column(style="cyan", no_wrap=True)
     table.add_column(style="magenta", no_wrap=True)
     table.add_column()
-    for row in _command_help_rows(ctx):
+    for row in row_generator(ctx):
         table.add_row(*row)
     return table
+
+
+def _build_command_table(ctx: typer.Context) -> Table:
+    """Build command help table."""
+    return _build_help_table(ctx, _command_help_rows)
 
 
 def _build_option_table(ctx: typer.Context) -> Table:
-    table = Table.grid(padding=(0, 3))
-    table.add_column(style="cyan", no_wrap=True)
-    table.add_column(style="magenta", no_wrap=True)
-    table.add_column()
-    for row in _option_help_rows(ctx):
-        table.add_row(*row)
-    return table
+    """Build option help table."""
+    return _build_help_table(ctx, _option_help_rows)
 
 
 def _command_help_rows(ctx: typer.Context):
+    """Generate help rows for commands with aliases."""
     command_group = ctx.command
     for name in command_group.list_commands(ctx):
         command = command_group.get_command(ctx, name)
@@ -94,6 +103,7 @@ def _command_help_rows(ctx: typer.Context):
 
 
 def _option_help_rows(ctx: typer.Context):
+    """Generate help rows for options."""
     for param in ctx.command.params:
         if not isinstance(param, click.Option):
             continue
@@ -104,6 +114,7 @@ def _option_help_rows(ctx: typer.Context):
 
 
 def _primary_long_option(param: click.Option) -> str:
+    """Extract the primary long option name from a click Option."""
     for opt in param.opts:
         if opt.startswith("--"):
             return opt
@@ -111,7 +122,8 @@ def _primary_long_option(param: click.Option) -> str:
 
 
 def _format_short_options(param: click.Option) -> str:
-    seen: List[str] = []
+    """Format short option names for display."""
+    seen: list[str] = []
     for opt in list(param.opts) + list(param.secondary_opts):
         if not opt.startswith("-") or opt.startswith("--"):
             continue
@@ -161,7 +173,7 @@ def _root_command(
         _show_root_help(ctx)
 
 
-def _resolve_services(names: Optional[List[str]]) -> List[ServiceSpec]:
+def _resolve_services(names: Optional[list[str]]) -> list[ServiceSpec]:
     try:
         return manager.resolve(names)
     except UnknownServiceError as exc:  # noqa: B904
@@ -213,14 +225,20 @@ def init() -> None:
 
 @app.command(context_settings=COMMAND_CONTEXT)
 def start(
-    service: Optional[List[str]] = typer.Argument(None, help="Services to start (default: all)."),
-    force_cpu: bool = typer.Option(False, "--cpu", help="Force CPU even if GPU is present."),
+    service: Optional[list[str]] = typer.Argument(
+        None, help="Services to start (default: all)."
+    ),
+    force_cpu: bool = typer.Option(
+        False, "--cpu", help="Force CPU even if GPU is present."
+    ),
 ) -> None:
     """Start pods for specified services (default: ollama + open-webui)."""
     specs = _resolve_services(service)
     _ensure_podman_available()
     gpu_available, gpu_detail = detect_gpu()
-    console.print(f"[info]GPU: {'enabled' if gpu_available else 'not detected'} ({gpu_detail})[/]")
+    console.print(
+        f"[info]GPU: {'enabled' if gpu_available else 'not detected'} ({gpu_detail})[/]"
+    )
 
     with status_spinner("Ensuring network"):
         manager.ensure_network()
@@ -233,19 +251,32 @@ def start(
 
     for spec in specs:
         with status_spinner(f"Starting {spec.name}"):
-            manager.start_service(spec, gpu_available=gpu_available, force_cpu=force_cpu)
+            manager.start_service(
+                spec, gpu_available=gpu_available, force_cpu=force_cpu
+            )
         console.print(f"[ok]{spec.name} running in pod {spec.pod}[/]")
     ui.success_panel(f"start complete: {', '.join(spec.name for spec in specs)}")
 
 
-app.command(name="up", help="[alias]Alias for start[/]", hidden=True, context_settings=COMMAND_CONTEXT)(start)
+app.command(
+    name="up",
+    help="[alias]Alias for start[/]",
+    hidden=True,
+    context_settings=COMMAND_CONTEXT,
+)(start)
 
 
 @app.command(context_settings=COMMAND_CONTEXT)
 def stop(
-    service: Optional[List[str]] = typer.Argument(None, help="Services to stop (default: all)."),
-    remove: bool = typer.Option(False, "--remove", "-r", help="Remove pods after stopping."),
-    timeout: int = typer.Option(10, "--timeout", "-t", help="Stop timeout seconds."),
+    service: Optional[list[str]] = typer.Argument(
+        None, help="Services to stop (default: all)."
+    ),
+    remove: bool = typer.Option(
+        False, "--remove", "-r", help="Remove pods after stopping."
+    ),
+    timeout: int = typer.Option(
+        DEFAULT_STOP_TIMEOUT, "--timeout", "-t", help="Stop timeout seconds."
+    ),
 ) -> None:
     """Stop pods for specified services."""
     specs = _resolve_services(service)
@@ -260,11 +291,20 @@ def stop(
     ui.success_panel(f"stop complete: {', '.join(spec.name for spec in specs)}")
 
 
-app.command(name="down", help="[alias]Alias for stop[/]", hidden=True, context_settings=COMMAND_CONTEXT)(stop)
+app.command(
+    name="down",
+    help="[alias]Alias for stop[/]",
+    hidden=True,
+    context_settings=COMMAND_CONTEXT,
+)(stop)
 
 
 @app.command(context_settings=COMMAND_CONTEXT)
-def status(service: Optional[List[str]] = typer.Argument(None, help="Services to report (default: all).")) -> None:
+def status(
+    service: Optional[list[str]] = typer.Argument(
+        None, help="Services to report (default: all)."
+    ),
+) -> None:
     """Show pod status."""
     specs = _resolve_services(service)
     _ensure_podman_available()
@@ -289,16 +329,32 @@ def status(service: Optional[List[str]] = typer.Argument(None, help="Services to
             for binding in bindings or []:
                 host_port = binding.get("HostPort", "")
                 ports.append(f"{host_port}->{container_port}")
-        ports_display = ", ".join(ports) if ports else (", ".join(row.get("Ports", [])) if row.get("Ports") else "-")
+        ports_display = (
+            ", ".join(ports)
+            if ports
+            else (", ".join(row.get("Ports", [])) if row.get("Ports") else "-")
+        )
         containers = str(row.get("NumberOfContainers", "?") or "?")
         host_port = _extract_host_port(spec, port_bindings)
         ping_status = _ping_service(spec, host_port) if host_port else "-"
-        table.add_row(spec.name, spec.pod, row.get("Status", "?"), ports_display, containers, ping_status)
+        table.add_row(
+            spec.name,
+            spec.pod,
+            row.get("Status", "?"),
+            ports_display,
+            containers,
+            ping_status,
+        )
 
     console.print(table)
 
 
-app.command(name="ps", help="[alias]Alias for status[/]", hidden=True, context_settings=COMMAND_CONTEXT)(status)
+app.command(
+    name="ps",
+    help="[alias]Alias for status[/]",
+    hidden=True,
+    context_settings=COMMAND_CONTEXT,
+)(status)
 
 
 @app.command(context_settings=COMMAND_CONTEXT)
@@ -307,7 +363,10 @@ def alias() -> None:
     ui.show_command_aliases(COMMAND_ALIASES)
 
 
-def _extract_host_port(spec: ServiceSpec, port_bindings) -> Optional[int]:
+def _extract_host_port(
+    spec: ServiceSpec, port_bindings: dict[str, Any]
+) -> Optional[int]:
+    """Extract the host port from port bindings or service spec."""
     # Prefer actual bindings; fallback to configured host port.
     if port_bindings:
         first_binding = next(iter(port_bindings.values()), None)
@@ -324,10 +383,13 @@ def _extract_host_port(spec: ServiceSpec, port_bindings) -> Optional[int]:
 
 
 def _ping_service(spec: ServiceSpec, port: Optional[int]) -> str:
+    """Ping a service's health endpoint and return status."""
     if not spec.health_path or port is None:
         return "-"
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2.0)
+        conn = http.client.HTTPConnection(
+            "127.0.0.1", port, timeout=DEFAULT_PING_TIMEOUT
+        )
         conn.request("GET", spec.health_path)
         resp = conn.getresponse()
         code = resp.status
@@ -341,24 +403,36 @@ def _ping_service(spec: ServiceSpec, port: Optional[int]) -> str:
 
 @app.command(context_settings=COMMAND_CONTEXT)
 def logs(
-    service: Optional[List[str]] = typer.Argument(None, help="Services to show logs for (default: all)."),
+    service: Optional[list[str]] = typer.Argument(
+        None, help="Services to show logs for (default: all)."
+    ),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow logs."),
-    since: Optional[str] = typer.Option(None, "--since", help="Show logs since RFC3339 timestamp or duration."),
-    lines: int = typer.Option(200, "--lines", "-n", help="Number of log lines to show."),
+    since: Optional[str] = typer.Option(
+        None, "--since", help="Show logs since RFC3339 timestamp or duration."
+    ),
+    lines: int = typer.Option(
+        DEFAULT_LOG_LINES, "--lines", "-n", help="Number of log lines to show."
+    ),
 ) -> None:
     """Show pod logs."""
     specs = _resolve_services(service)
     _ensure_podman_available()
     if follow and len(specs) > 1:
-        console.print("[warn]follow with multiple services will stream sequentially; Ctrl+C to stop.[/]")
+        console.print(
+            "[warn]follow with multiple services will stream sequentially; Ctrl+C to stop.[/]"
+        )
 
     for idx, spec in enumerate(specs):
         if idx > 0:
             console.print()
         ui.info_panel(f"Logs for {spec.name} ({spec.container})")
-        code = podman.stream_logs(spec.container, follow=follow, tail=lines, since=since)
+        code = podman.stream_logs(
+            spec.container, follow=follow, tail=lines, since=since
+        )
         if code != 0:
-            console.print(f"[warn]podman logs exited with code {code} for {spec.container}[/]")
+            console.print(
+                f"[warn]podman logs exited with code {code} for {spec.container}[/]"
+            )
 
 
 def main() -> None:

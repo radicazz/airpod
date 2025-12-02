@@ -91,7 +91,9 @@ class EnvironmentReport:
 class ServiceManager:
     """Performs the common Podman orchestration tasks."""
 
-    def __init__(self, registry: ServiceRegistry, network_name: str = "airpods_network"):
+    def __init__(
+        self, registry: ServiceRegistry, network_name: str = "airpods_network"
+    ):
         self.registry = registry
         self.network_name = network_name
 
@@ -110,7 +112,9 @@ class ServiceManager:
             check_dependency("uv", ["--version"]),
         ]
         gpu_available, gpu_detail = detect_gpu()
-        return EnvironmentReport(checks=checks, gpu_available=gpu_available, gpu_detail=gpu_detail)
+        return EnvironmentReport(
+            checks=checks, gpu_available=gpu_available, gpu_detail=gpu_detail
+        )
 
     def ensure_podman(self) -> None:
         """Verify podman is installed and available."""
@@ -139,7 +143,9 @@ class ServiceManager:
         for spec in specs:
             podman.pull_image(spec.image)
 
-    def start_service(self, spec: ServiceSpec, *, gpu_available: bool, force_cpu: bool = False) -> None:
+    def start_service(
+        self, spec: ServiceSpec, *, gpu_available: bool, force_cpu: bool = False
+    ) -> None:
         """Start a service by creating its pod and running its container."""
         podman.ensure_pod(spec.pod, spec.ports, network=self.network_name)
         podman.run_container(
@@ -151,7 +157,9 @@ class ServiceManager:
             gpu=spec.needs_gpu and gpu_available and not force_cpu,
         )
 
-    def stop_service(self, spec: ServiceSpec, *, remove: bool = False, timeout: int = 10) -> bool:
+    def stop_service(
+        self, spec: ServiceSpec, *, remove: bool = False, timeout: int = 10
+    ) -> bool:
         """Stop a service's pod; returns True if pod existed."""
         if not podman.pod_exists(spec.pod):
             return False
@@ -169,4 +177,3 @@ class ServiceManager:
     def pod_status_rows(self) -> Dict[str, Dict[str, Any]]:
         """Return pod status indexed by pod name."""
         return {row.get("Name"): row for row in podman.pod_status()}
-

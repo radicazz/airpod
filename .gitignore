@@ -18,6 +18,7 @@ venv/
 .python-version
 .ruff_cache/
 .mypy_cache/
+.pytest_cache/
 
 # Editors
 .DS_Store

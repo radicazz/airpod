@@ -21,7 +21,11 @@ def show_environment(report: EnvironmentReport) -> None:
     for check in report.checks:
         status = "[ok]ok" if check.ok else "[error]missing"
         table.add_row(check.name, status, check.detail)
-    table.add_row("gpu (nvidia)", "[ok]ok" if report.gpu_available else "[warn]not detected", report.gpu_detail)
+    table.add_row(
+        "gpu (nvidia)",
+        "[ok]ok" if report.gpu_available else "[warn]not detected",
+        report.gpu_detail,
+    )
     console.print(table)
 
 
@@ -47,6 +51,8 @@ def show_command_aliases(aliases: Mapping[str, str]) -> None:
     table.add_column("Command", style="info")
     table.add_column("Alias", style="alias")
     for command in sorted(grouped):
-        alias_text = ", ".join(f"[alias]{alias}[/]" for alias in sorted(grouped[command]))
+        alias_text = ", ".join(
+            f"[alias]{alias}[/]" for alias in sorted(grouped[command])
+        )
         table.add_row(command, alias_text)
     console.print(table)

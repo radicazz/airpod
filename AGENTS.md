@@ -28,3 +28,6 @@ Provide a Rich + Typer-powered CLI (`airpods/cli.py`, installed as the `airpods`
 ## Testing Approach
 - Unit tests mock subprocess interactions to validate command flow and flags.
 - Integration (later): optional Podman-in-Podman smoke tests; GPU checks skipped when unavailable.
+
+## Development Workflow
+- Run `uv format` after code changes and before commits to maintain consistent formatting.

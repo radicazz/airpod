@@ -14,8 +14,20 @@ dependencies = [
   "click>=8.1,<8.2",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0,<9.0",
+  "pytest-mock>=3.0,<4.0",
+]
+
 [project.scripts]
 airpods = "airpods.cli:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
