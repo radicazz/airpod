@@ -14,13 +14,18 @@ except ImportError:  # pragma: no cover
 
 from airpods import state
 from airpods.cli import app
-from airpods.configuration import reload_config
+import airpods.cli.completions as cli_completions
+from airpods.configuration import ConfigurationError, reload_config
 from airpods.configuration.loader import locate_config_file
 from airpods.services import EnvironmentReport
 from airpods.system import CheckResult
 
 
 runner = CliRunner()
+
+
+def _completion_values(items):
+    return [getattr(item, "value", item) for item in items]
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +59,14 @@ class TestCLIBasics:
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0
         assert "airpods" in result.stdout
+
+    def test_start_help_uses_custom_renderer(self):
+        """Test start --help renders the Rich-powered help panel."""
+        result = runner.invoke(app, ["start", "--help"])
+
+        assert result.exit_code == 0
+        assert "Usage" in result.stdout
+        assert "airpods start" in result.stdout
 
 
 class TestCommandAliases:
@@ -300,3 +313,60 @@ class TestConfigCommand:
         )
         assert result.exit_code != 0
         assert (home / "config.toml").read_text() == before
+
+    def test_config_root_help_option(self):
+        result = runner.invoke(app, ["config", "--help"])
+
+        assert result.exit_code == 0
+        assert "airpods config" in result.stdout
+
+
+class TestCompletionHelpers:
+    """Tests for shell completion helper functions."""
+
+    def test_service_completion_filters_candidates(self, monkeypatch):
+        monkeypatch.setattr(
+            cli_completions.manager.registry,
+            "names",
+            lambda: ["ollama", "open-webui", "comfyui"],
+        )
+
+        result = cli_completions.service_name_completion(None, None, "o")
+
+        assert _completion_values(result) == ["ollama", "open-webui"]
+
+    def test_config_key_completion_includes_nested_values(self, monkeypatch):
+        class DummyConfig:
+            def to_dict(self):
+                return {
+                    "cli": {"stop_timeout": 20},
+                    "services": {
+                        "ollama": {
+                            "ports": [
+                                {"host": 11434, "container": 11434},
+                            ]
+                        }
+                    },
+                }
+
+        monkeypatch.setattr(cli_completions, "get_config", lambda: DummyConfig())
+
+        cli_keys = _completion_values(
+            cli_completions.config_key_completion(None, None, "cli.")
+        )
+        service_keys = _completion_values(
+            cli_completions.config_key_completion(None, None, "services.oll")
+        )
+
+        assert "cli.stop_timeout" in cli_keys
+        assert "services.ollama.ports.0.host" in service_keys
+
+    def test_config_key_completion_handles_errors(self, monkeypatch):
+        def _boom():
+            raise ConfigurationError("broken")
+
+        monkeypatch.setattr(cli_completions, "get_config", _boom)
+
+        assert _completion_values(
+            cli_completions.config_key_completion(None, None, "cli")
+        ) == []

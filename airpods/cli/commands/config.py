@@ -34,19 +34,35 @@ from airpods.logging import console
 from airpods.state import state_root
 
 from ..common import COMMAND_CONTEXT
+from ..completions import config_key_completion
+from ..help import command_help_option, maybe_show_command_help, show_command_help
 from ..type_defs import CommandMap
 
 
 def register(app: typer.Typer) -> CommandMap:
-    config_app = typer.Typer(help="Manage airpods configuration.")
+    config_app = typer.Typer(help="Manage airpods configuration.", context_settings=COMMAND_CONTEXT)
+
+    @config_app.callback(invoke_without_command=True)
+    def _config_root(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
+    ) -> None:
+        """Entry point for the config command group."""
+
+        maybe_show_command_help(ctx, help_)
+        if ctx.invoked_subcommand is None:
+            show_command_help(ctx)
 
     @config_app.command(context_settings=COMMAND_CONTEXT)
     def init(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
         force: bool = typer.Option(
             False, "--force", "-f", help="Overwrite existing config file."
         ),
     ) -> None:
         """Create a default configuration file."""
+        maybe_show_command_help(ctx, help_)
         config_path = _default_config_path()
         if config_path.exists() and not force:
             console.print(f"[warn]Config file already exists: {config_path}[/]")
@@ -61,6 +77,8 @@ def register(app: typer.Typer) -> CommandMap:
 
     @config_app.command(context_settings=COMMAND_CONTEXT)
     def show(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
         format: str = typer.Option(
             "toml",
             "--format",
@@ -69,6 +87,7 @@ def register(app: typer.Typer) -> CommandMap:
         ),
     ) -> None:
         """Display the current configuration."""
+        maybe_show_command_help(ctx, help_)
         try:
             config = get_config()
         except ConfigurationError as exc:
@@ -93,8 +112,12 @@ def register(app: typer.Typer) -> CommandMap:
         console.print_json(json.dumps(config.to_dict(), indent=2))
 
     @config_app.command(context_settings=COMMAND_CONTEXT)
-    def path() -> None:
+    def path(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
+    ) -> None:
         """Show configuration file location."""
+        maybe_show_command_help(ctx, help_)
         config_path = locate_config_file()
         if config_path:
             console.print(f"[ok]Config file: {config_path}[/]")
@@ -105,8 +128,12 @@ def register(app: typer.Typer) -> CommandMap:
             console.print(f"[info]Default location: {_default_config_path()}[/]")
 
     @config_app.command(context_settings=COMMAND_CONTEXT)
-    def edit() -> None:
+    def edit(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
+    ) -> None:
         """Open configuration file in $EDITOR."""
+        maybe_show_command_help(ctx, help_)
         config_path = locate_config_file()
         if not config_path:
             console.print("[warn]No config file exists yet[/]")
@@ -129,8 +156,12 @@ def register(app: typer.Typer) -> CommandMap:
             raise typer.Exit(code=1)
 
     @config_app.command(context_settings=COMMAND_CONTEXT)
-    def validate() -> None:
+    def validate(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
+    ) -> None:
         """Validate the configuration file."""
+        maybe_show_command_help(ctx, help_)
         try:
             config = reload_config()
         except ConfigurationError as exc:
@@ -143,11 +174,14 @@ def register(app: typer.Typer) -> CommandMap:
 
     @config_app.command(context_settings=COMMAND_CONTEXT)
     def reset(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
         force: bool = typer.Option(
             False, "--force", "-f", help="Skip confirmation prompt."
         ),
     ) -> None:
         """Reset configuration to defaults."""
+        maybe_show_command_help(ctx, help_)
         config_path = locate_config_file()
         if not config_path:
             console.print("[warn]No config file to reset[/]")
@@ -177,9 +211,16 @@ def register(app: typer.Typer) -> CommandMap:
 
     @config_app.command(context_settings=COMMAND_CONTEXT)
     def get(
-        key: str = typer.Argument(..., help="Config key in dot notation"),
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
+        key: str = typer.Argument(
+            ...,
+            help="Config key in dot notation",
+            shell_complete=config_key_completion,
+        ),
     ) -> None:
         """Print a specific configuration value."""
+        maybe_show_command_help(ctx, help_)
         try:
             config = get_config()
         except ConfigurationError as exc:
@@ -193,7 +234,13 @@ def register(app: typer.Typer) -> CommandMap:
 
     @config_app.command(context_settings=COMMAND_CONTEXT)
     def set(
-        key: str = typer.Argument(..., help="Config key in dot notation"),
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
+        key: str = typer.Argument(
+            ...,
+            help="Config key in dot notation",
+            shell_complete=config_key_completion,
+        ),
         value: str = typer.Argument(..., help="New value"),
         value_type: str = typer.Option(
             "auto",
@@ -203,6 +250,7 @@ def register(app: typer.Typer) -> CommandMap:
         ),
     ) -> None:
         """Update a specific configuration value."""
+        maybe_show_command_help(ctx, help_)
         config_path, created = _ensure_config_file()
         if created:
             console.print(f"[info]Created config file at {config_path}[/]")

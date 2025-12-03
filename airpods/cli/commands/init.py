@@ -11,6 +11,7 @@ from airpods.logging import console, status_spinner, step_progress
 from airpods.services import VolumeEnsureResult
 
 from ..common import COMMAND_CONTEXT, manager
+from ..help import command_help_option, maybe_show_command_help
 from ..type_defs import CommandMap
 
 
@@ -36,8 +37,12 @@ def _print_volume_status(results: Iterable[VolumeEnsureResult]) -> None:
 
 def register(app: typer.Typer) -> CommandMap:
     @app.command(context_settings=COMMAND_CONTEXT)
-    def init() -> None:
+    def init(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
+    ) -> None:
         """Verify tools, ensure resources, and report whether anything new was created."""
+        maybe_show_command_help(ctx, help_)
         report = manager.report_environment()
         ui.show_environment(report)
 

@@ -20,7 +20,26 @@ from rich.text import Text
 from airpods import __description__, ui
 from airpods.logging import PALETTE, console
 
-from .common import COMMAND_ALIASES
+from .common import COMMAND_ALIASES, HELP_OPTION_NAMES
+
+
+def command_help_option() -> bool:
+    """Return the shared Typer option used to trigger command help."""
+
+    return typer.Option(
+        False,
+        *HELP_OPTION_NAMES,
+        help="Show this message and exit.",
+        is_eager=True,
+    )
+
+
+def maybe_show_command_help(ctx: typer.Context, help_requested: bool) -> None:
+    """Render the Rich-powered help view when a command receives --help."""
+
+    if help_requested:
+        show_command_help(ctx)
+        raise typer.Exit()
 
 
 def show_command_help(ctx: typer.Context) -> None:

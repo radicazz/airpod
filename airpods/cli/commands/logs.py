@@ -15,14 +15,20 @@ from ..common import (
     ensure_podman_available,
     resolve_services,
 )
+from ..completions import service_name_completion
+from ..help import command_help_option, maybe_show_command_help
 from ..type_defs import CommandMap
 
 
 def register(app: typer.Typer) -> CommandMap:
     @app.command(context_settings=COMMAND_CONTEXT)
     def logs(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
         service: Optional[list[str]] = typer.Argument(
-            None, help="Services to show logs for (default: all)."
+            None,
+            help="Services to show logs for (default: all).",
+            shell_complete=service_name_completion,
         ),
         follow: bool = typer.Option(False, "--follow", "-f", help="Follow logs."),
         since: Optional[str] = typer.Option(
@@ -33,6 +39,7 @@ def register(app: typer.Typer) -> CommandMap:
         ),
     ) -> None:
         """Show pod logs."""
+        maybe_show_command_help(ctx, help_)
         specs = resolve_services(service)
         ensure_podman_available()
         if follow and len(specs) > 1:

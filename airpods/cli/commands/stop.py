@@ -16,14 +16,20 @@ from ..common import (
     manager,
     resolve_services,
 )
+from ..completions import service_name_completion
+from ..help import command_help_option, maybe_show_command_help
 from ..type_defs import CommandMap
 
 
 def register(app: typer.Typer) -> CommandMap:
     @app.command(context_settings=COMMAND_CONTEXT)
     def stop(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
         service: Optional[list[str]] = typer.Argument(
-            None, help="Services to stop (default: all)."
+            None,
+            help="Services to stop (default: all).",
+            shell_complete=service_name_completion,
         ),
         remove: bool = typer.Option(
             False, "--remove", "-r", help="Remove pods after stopping."
@@ -33,6 +39,7 @@ def register(app: typer.Typer) -> CommandMap:
         ),
     ) -> None:
         """Stop pods for specified services; confirms before destructive removal."""
+        maybe_show_command_help(ctx, help_)
         specs = resolve_services(service)
         spec_count = len(specs)
         ensure_podman_available()

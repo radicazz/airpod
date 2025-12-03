@@ -11,6 +11,8 @@ import typer
 from airpods.logging import console
 
 from ..common import COMMAND_CONTEXT, ensure_podman_available, resolve_services
+from ..completions import service_name_completion
+from ..help import command_help_option, maybe_show_command_help
 from ..status_view import render_status
 from ..type_defs import CommandMap
 
@@ -18,14 +20,19 @@ from ..type_defs import CommandMap
 def register(app: typer.Typer) -> CommandMap:
     @app.command(context_settings=COMMAND_CONTEXT)
     def status(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
         service: Optional[list[str]] = typer.Argument(
-            None, help="Services to report (default: all)."
+            None,
+            help="Services to report (default: all).",
+            shell_complete=service_name_completion,
         ),
         watch: Optional[float] = typer.Option(
             None, "--watch", "-w", help="Refresh interval in seconds."
         ),
     ) -> None:
         """Show pod status."""
+        maybe_show_command_help(ctx, help_)
         specs = resolve_services(service)
         ensure_podman_available()
         if watch is not None and watch <= 0:

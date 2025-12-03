@@ -10,8 +10,8 @@ from airpods.configuration import get_config
 from airpods.logging import console
 from airpods.services import ServiceManager, ServiceSpec, UnknownServiceError
 
-HELP_OPTION_NAMES = ["-h", "--help"]
-COMMAND_CONTEXT = {"help_option_names": HELP_OPTION_NAMES}
+HELP_OPTION_NAMES = ("-h", "--help")
+COMMAND_CONTEXT = {"help_option_names": []}
 
 _CONFIG = get_config()
 

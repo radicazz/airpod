@@ -19,14 +19,14 @@ You will need the following before you get started:
 - `podman-compose`: Required for wiring multiple containers together.
 - *(optional)* `nvidia-smi` + NVIDIA drivers: unlock GPU acceleration when available.
 
-Installing the CLI:
+Install the CLI (this flow is intended for developers):
 
 ```bash
 git clone https://github.com/radicazz/airpods.git
 cd airpods
 
 uv venv && source .venv/bin/activate
-uv pip install -e .
+uv pip install -e . '.[dev]'
 ```
 
 > [!NOTE]

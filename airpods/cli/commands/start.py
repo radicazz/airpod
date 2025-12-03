@@ -12,6 +12,8 @@ from airpods.system import detect_gpu
 from airpods.services import ServiceStartResult, VolumeEnsureResult
 
 from ..common import COMMAND_CONTEXT, ensure_podman_available, manager, resolve_services
+from ..completions import service_name_completion
+from ..help import command_help_option, maybe_show_command_help
 from ..type_defs import CommandMap
 
 
@@ -52,8 +54,12 @@ def _print_service_start_status(result: ServiceStartResult) -> None:
 def register(app: typer.Typer) -> CommandMap:
     @app.command(context_settings=COMMAND_CONTEXT)
     def start(
+        ctx: typer.Context,
+        help_: bool = command_help_option(),
         service: Optional[list[str]] = typer.Argument(
-            None, help="Services to start (default: all)."
+            None,
+            help="Services to start (default: all).",
+            shell_complete=service_name_completion,
         ),
         force_cpu: bool = typer.Option(
             False, "--cpu", help="Force CPU even if GPU is present."
@@ -65,6 +71,7 @@ def register(app: typer.Typer) -> CommandMap:
         ),
     ) -> None:
         """Start pods for specified services; prompts before replacing running containers."""
+        maybe_show_command_help(ctx, help_)
         specs = resolve_services(service)
         spec_count = len(specs)
         ensure_podman_available()
