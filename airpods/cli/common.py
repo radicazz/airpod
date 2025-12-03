@@ -51,4 +51,4 @@ def ensure_podman_available() -> None:
 
 
 def print_version() -> None:
-    console.print(f"airpods {__version__}")
+    console.print(f"[bold]airpods[/bold] [accent]v{__version__}[/]")

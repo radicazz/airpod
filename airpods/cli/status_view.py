@@ -13,8 +13,7 @@ import socket
 import time
 from typing import Any, List, Optional
 
-from rich.table import Table
-
+from airpods import ui
 from airpods.logging import console
 from airpods.services import ServiceSpec
 
@@ -23,10 +22,10 @@ from .common import DEFAULT_PING_TIMEOUT, manager
 
 def render_status(specs: List[ServiceSpec]) -> None:
     """Render the pod status table.
-    
+
     Args:
         specs: List of service specifications to check status for.
-        
+
     Note:
         manager.pod_status_rows() returns a dict mapping pod names to status info,
         or an empty dict if no pods are running.
@@ -34,7 +33,7 @@ def render_status(specs: List[ServiceSpec]) -> None:
     pod_rows = manager.pod_status_rows()
     if pod_rows is None:
         pod_rows = {}
-    table = Table(title="Pods", header_style="bold cyan")
+    table = ui.themed_table(title="[accent]Pods[/accent]")
     table.add_column("Service")
     table.add_column("Pod")
     table.add_column("Status")
@@ -125,11 +124,11 @@ def container_count(row: dict[str, Any]) -> str:
 
 def ping_service(spec: ServiceSpec, port: Optional[int]) -> str:
     """Ping a service's health endpoint and return status.
-    
+
     Args:
         spec: Service specification containing health_path
         port: Host port to connect to
-        
+
     Returns:
         Formatted status string with HTTP code and latency, or error type
     """

@@ -1,17 +1,62 @@
-"""UI utilities for rich console output."""
+"""UI utilities for consistently themed Rich console output."""
 
 from __future__ import annotations
 
+from typing import Tuple
+
+from rich import box
 from rich.panel import Panel
 from rich.table import Table
 
-from airpods.logging import console
+from airpods.logging import PALETTE, console
 from airpods.services import EnvironmentReport
+
+DEFAULT_ROW_STYLES: Tuple[str, str] | None = None
+
+
+def themed_table(
+    *,
+    title: str | None = None,
+    show_header: bool = True,
+    header_style: str | None = None,
+    row_styles: Tuple[str, str] | None = DEFAULT_ROW_STYLES,
+    box_style=box.SIMPLE_HEAD,
+    pad_edge: bool = False,
+    expand: bool = False,
+) -> Table:
+    """Return a Rich Table with shared palette + layout defaults."""
+    return Table(
+        title=title,
+        show_header=show_header,
+        header_style=header_style or f"bold {PALETTE['blue']}",
+        style=PALETTE["fg"],
+        row_styles=row_styles,
+        box=box_style,
+        pad_edge=pad_edge,
+        expand=expand,
+    )
+
+
+def themed_grid(*, padding: Tuple[int, int] = (0, 3), expand: bool = False) -> Table:
+    """Return a Rich grid table honoring the shared palette."""
+    table = Table.grid(padding=padding, expand=expand)
+    table.style = PALETTE["fg"]
+    return table
+
+
+def themed_panel(
+    message: str,
+    *,
+    border_color: str,
+    text_style: str | None = None,
+) -> Panel:
+    """Return a Rich Panel styled with the shared palette."""
+    return Panel.fit(message, border_style=border_color, style=text_style or PALETTE["fg"])
 
 
 def show_environment(report: EnvironmentReport) -> None:
     """Display environment checks in a formatted table."""
-    table = Table(title="Environment", show_header=True, header_style="bold cyan")
+    table = themed_table(title="[accent]Environment[/accent]")
     table.add_column("Check")
     table.add_column("Status")
     table.add_column("Details")
@@ -28,13 +73,13 @@ def show_environment(report: EnvironmentReport) -> None:
 
 
 def success_panel(message: str) -> None:
-    """Display a success message in a green panel."""
-    console.print(Panel.fit(f"[ok]{message}[/]", border_style="green"))
+    """Display a success message with standard styling."""
+    console.print(f"[ok]{message}[/]")
 
 
 def info_panel(message: str) -> None:
-    """Display an info message in a cyan panel."""
-    console.print(Panel.fit(f"[info]{message}[/]", border_style="cyan"))
+    """Display an info message with standard styling."""
+    console.print(f"[info]{message}[/]")
 
 
 def _clean_detail(name: str, detail: str) -> str:

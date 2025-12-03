@@ -12,6 +12,7 @@ dependencies = [
   "typer>=0.9,<0.13",
   "rich>=13.0,<14.0",
   "click>=8.1,<8.2",
+  "tomli>=2.0.1; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -25,9 +26,3 @@ airpods = "airpods.cli:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]

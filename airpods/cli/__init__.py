@@ -5,7 +5,7 @@ import time as _time
 
 import typer
 
-from airpods import podman
+from airpods import __description__, podman
 from airpods.logging import console
 
 from .commands import register as register_commands
@@ -22,7 +22,7 @@ from .help import show_root_help
 from .status_view import render_status
 
 app = typer.Typer(
-    help="Orchestrate local AI services (Ollama, Open WebUI) with Podman + UV.",
+    help=__description__,
     context_settings={"help_option_names": []},
     rich_markup_mode="rich",
 )

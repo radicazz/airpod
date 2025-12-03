@@ -9,29 +9,16 @@ This module handles custom help display including:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, Tuple
+from typing import Iterable, Sequence
 
+import click
 import typer
 from rich.table import Table
 
-from airpods import __version__
-from airpods.logging import console
+from airpods import __description__, ui
+from airpods.logging import PALETTE, console
 
 from .common import COMMAND_ALIASES
-
-if TYPE_CHECKING:
-    import click
-
-HELP_EXAMPLES = [
-    ("airpods init", "Verify dependencies, volumes, and secrets before first run."),
-    ("airpods start", "Launch Ollama and Open WebUI with GPU auto-detect."),
-    (
-        "airpods start --cpu open-webui",
-        "Force CPU mode when starting only Open WebUI.",
-    ),
-    ("airpods status", "Show pod health, ports, and ping results."),
-    ("airpods logs ollama -n 100", "Tail the latest Ollama logs."),
-]
 
 
 def _alias_groups() -> dict[str, list[str]]:
@@ -47,28 +34,31 @@ COMMAND_ALIAS_GROUPS = _alias_groups()
 
 
 def show_root_help(ctx: typer.Context) -> None:
-    console.print(f"[bold]airpods[/bold] v{__version__}")
-    console.print(
-        "Orchestrate local AI services (Ollama, Open WebUI) with Podman + UV."
-    )
+    console.print(__description__)
     console.print()
-    console.print("[bold cyan]Usage[/bold cyan]")
+    console.print("[section]Usage[/section]")
     console.print("  airpods [OPTIONS] COMMAND [ARGS]...\n")
-    console.print("[bold cyan]Commands[/bold cyan]")
+    console.print("[section]Commands[/section]")
     console.print(build_command_table(ctx))
     console.print()
-    console.print("[bold cyan]Options[/bold cyan]")
+    console.print("[section]Options[/section]")
     console.print(build_option_table(ctx))
-    console.print()
-    console.print("[bold cyan]Examples[/bold cyan]")
-    console.print(build_examples_table())
 
 
-def build_help_table(ctx: typer.Context, rows: Iterable[Tuple[str, str, str]]) -> Table:
-    table = Table.grid(padding=(0, 3))
-    table.add_column(style="cyan", no_wrap=True)
-    table.add_column(style="magenta", no_wrap=True)
-    table.add_column()
+def build_help_table(
+    ctx: typer.Context,
+    rows: Iterable[tuple[str, ...]],
+    *,
+    column_styles: Sequence[dict[str, object]] | None = None,
+) -> Table:
+    table = ui.themed_grid(padding=(0, 3))
+    styles = column_styles or (
+        {"style": f"bold {PALETTE['green']}", "no_wrap": True},
+        {"style": f"bold {PALETTE['purple']}", "no_wrap": True},
+        {"style": PALETTE["fg"]},
+    )
+    for column in styles:
+        table.add_column(**column)
     for row in rows:
         table.add_row(*row)
     return table
@@ -76,7 +66,13 @@ def build_help_table(ctx: typer.Context, rows: Iterable[Tuple[str, str, str]]) -
 
 def build_command_table(ctx: typer.Context) -> Table:
     rows = command_help_rows(ctx)
-    return build_help_table(ctx, rows)
+    column_styles = (
+        {"style": f"bold {PALETTE['green']}", "no_wrap": True},
+        {"style": f"bold {PALETTE['purple']}", "no_wrap": True},
+        {"style": f"bold {PALETTE['cyan']}", "no_wrap": True},
+        {"style": PALETTE["fg"]},
+    )
+    return build_help_table(ctx, rows, column_styles=column_styles)
 
 
 def build_option_table(ctx: typer.Context) -> Table:
@@ -95,13 +91,12 @@ def command_help_rows(ctx: typer.Context):
             continue
         alias_text = ", ".join(COMMAND_ALIAS_GROUPS.get(name, []))
         description = (command.help or command.short_help or "").strip()
-        rows.append((name, alias_text, description))
+        option_hint = command_param_hint(command)
+        rows.append((name, alias_text, option_hint, description))
     return rows
 
 
 def option_help_rows(ctx: typer.Context):
-    import click
-    
     rows = []
     if ctx.command is None:
         return rows
@@ -113,6 +108,25 @@ def option_help_rows(ctx: typer.Context):
         description = (param.help or "").strip()
         rows.append((name, short_text, description))
     return rows
+
+
+def command_param_hint(command: click.Command) -> str:
+    arguments = [param for param in command.params if isinstance(param, click.Argument)]
+    if arguments:
+        return format_argument_hint(arguments[0])
+    options = [param for param in command.params if isinstance(param, click.Option)]
+    if options:
+        return primary_long_option(options[0]) or options[0].opts[0]
+    return ""
+
+
+def format_argument_hint(param: click.Argument) -> str:
+    name = param.metavar or param.human_readable_name or param.name or ""
+    if not name:
+        return ""
+    normalized = name.replace("_", " ").strip()
+    normalized = normalized.replace(" ", "-").upper()
+    return f"<{normalized}>"
 
 
 def primary_long_option(param: "click.Option") -> str:
@@ -130,12 +144,3 @@ def format_short_options(param: "click.Option") -> str:
         if opt not in seen:
             seen.append(opt)
     return ", ".join(seen)
-
-
-def build_examples_table() -> Table:
-    table = Table.grid(padding=(0, 3))
-    table.add_column(style="cyan", no_wrap=True)
-    table.add_column()
-    for command, description in HELP_EXAMPLES:
-        table.add_row(f"[bold]{command}[/]", description)
-    return table
