@@ -38,32 +38,42 @@ class TestCLIBasics:
 class TestCommandAliases:
     """Test that command aliases work correctly."""
 
-    @patch("airpods.cli.manager")
-    @patch("airpods.cli.detect_gpu")
-    def test_up_alias(self, mock_gpu, mock_manager):
+    @patch("airpods.cli.commands.start.resolve_services")
+    @patch("airpods.cli.commands.start.ensure_podman_available")
+    @patch("airpods.cli.commands.start.manager")
+    @patch("airpods.cli.commands.start.detect_gpu")
+    def test_up_alias(self, mock_detect_gpu, mock_manager, mock_ensure, mock_resolve):
         """Test 'up' as alias for 'start'."""
-        mock_gpu.return_value = (False, "CPU")
-        mock_manager.resolve.return_value = []
-        mock_manager.ensure_podman.return_value = None
+        mock_detect_gpu.return_value = (False, "CPU")
+        mock_resolve.return_value = []
+        mock_ensure.return_value = None
+        mock_manager.ensure_network.return_value = None
+        mock_manager.ensure_volumes.return_value = None
+        mock_manager.pull_images.return_value = None
 
         result = runner.invoke(app, ["up"])
         assert result.exit_code == 0
 
-    @patch("airpods.cli.manager")
-    def test_down_alias(self, mock_manager):
+    @patch("airpods.cli.commands.stop.resolve_services")
+    @patch("airpods.cli.commands.stop.ensure_podman_available")
+    @patch("airpods.cli.commands.stop.manager")
+    def test_down_alias(self, mock_manager, mock_ensure, mock_resolve):
         """Test 'down' as alias for 'stop'."""
-        mock_manager.resolve.return_value = []
-        mock_manager.ensure_podman.return_value = None
+        mock_resolve.return_value = []
+        mock_ensure.return_value = None
+        mock_manager.stop_service.return_value = True
 
         result = runner.invoke(app, ["down"])
         assert result.exit_code == 0
 
-    @patch("airpods.cli.manager")
-    def test_ps_alias(self, mock_manager):
+    @patch("airpods.cli.commands.status.render_status")
+    @patch("airpods.cli.commands.status.ensure_podman_available")
+    @patch("airpods.cli.commands.status.resolve_services")
+    def test_ps_alias(self, mock_resolve, mock_ensure, mock_render):
         """Test 'ps' as alias for 'status'."""
-        mock_manager.resolve.return_value = []
-        mock_manager.ensure_podman.return_value = None
-        mock_manager.pod_status_rows.return_value = {}
+        mock_resolve.return_value = []
+        mock_ensure.return_value = None
+        mock_render.return_value = None
 
         result = runner.invoke(app, ["ps"])
         assert result.exit_code == 0
@@ -72,8 +82,8 @@ class TestCommandAliases:
 class TestDoctorCommand:
     """Test the doctor command behavior."""
 
-    @patch("airpods.cli.ui.show_environment")
-    @patch("airpods.cli.manager")
+    @patch("airpods.cli.commands.doctor.ui.show_environment")
+    @patch("airpods.cli.commands.doctor.manager")
     def test_doctor_success(self, mock_manager, mock_show_env):
         report = EnvironmentReport(checks=[], gpu_available=False, gpu_detail="n/a")
         mock_manager.report_environment.return_value = report
@@ -84,8 +94,8 @@ class TestDoctorCommand:
         assert "doctor complete" in result.stdout.lower()
         mock_show_env.assert_called_once_with(report)
 
-    @patch("airpods.cli.ui.show_environment")
-    @patch("airpods.cli.manager")
+    @patch("airpods.cli.commands.doctor.ui.show_environment")
+    @patch("airpods.cli.commands.doctor.manager")
     def test_doctor_missing_dependency(self, mock_manager, mock_show_env):
         report = EnvironmentReport(
             checks=[CheckResult(name="podman", ok=False, detail="not found")],
@@ -103,23 +113,25 @@ class TestDoctorCommand:
 class TestStatusCommand:
     """Test enhanced status command behavior."""
 
-    @patch("airpods.cli._render_status")
-    @patch("airpods.cli._ensure_podman_available")
-    @patch("airpods.cli._resolve_services")
+    @patch("airpods.cli.commands.status.render_status")
+    @patch("airpods.cli.commands.status.ensure_podman_available")
+    @patch("airpods.cli.commands.status.resolve_services")
     def test_status_watch_handles_interrupt(
         self, mock_resolve, mock_ensure, mock_render
     ):
         mock_resolve.return_value = [MagicMock()]
         mock_render.side_effect = [None]
 
-        with patch("airpods.cli.time.sleep", side_effect=KeyboardInterrupt):
+        with patch(
+            "airpods.cli.commands.status.time.sleep", side_effect=KeyboardInterrupt
+        ):
             result = runner.invoke(app, ["status", "--watch", "0.1"])
 
         assert result.exit_code == 0
         mock_render.assert_called()
 
-    @patch("airpods.cli._ensure_podman_available")
-    @patch("airpods.cli._resolve_services")
+    @patch("airpods.cli.commands.status.ensure_podman_available")
+    @patch("airpods.cli.commands.status.resolve_services")
     def test_status_invalid_watch_value(self, mock_resolve, mock_ensure):
         mock_resolve.return_value = []
 
@@ -132,13 +144,18 @@ class TestStatusCommand:
 class TestServiceResolution:
     """Test service name resolution."""
 
-    @patch("airpods.cli.manager")
-    def test_unknown_service_error(self, mock_manager):
+    @patch("airpods.cli.commands.start.ensure_podman_available")
+    @patch("airpods.cli.commands.start.manager")
+    @patch("airpods.cli.common.manager")
+    def test_unknown_service_error(
+        self, mock_common_manager, mock_start_manager, mock_ensure
+    ):
         """Test that unknown service names are rejected."""
         from airpods.services import UnknownServiceError
 
-        mock_manager.ensure_podman.return_value = None
-        mock_manager.resolve.side_effect = UnknownServiceError("unknown")
+        mock_ensure.return_value = None
+        mock_start_manager.ensure_network.return_value = None
+        mock_common_manager.resolve.side_effect = UnknownServiceError("unknown")
 
         result = runner.invoke(app, ["start", "unknown"])
         assert result.exit_code != 0

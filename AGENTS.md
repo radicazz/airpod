@@ -1,7 +1,7 @@
 # Agents & Plan
 
 ## Intent
-Provide a Rich + Typer-powered CLI (`airpods/cli.py`, installed as the `airpods` command via uv tools) that orchestrates local AI services via Podman. Initial services: Ollama (GGUF-capable) and Open WebUI wired to Ollama. Future additions: ComfyUI and others.
+Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via Podman. Initial services: Ollama (GGUF-capable) and Open WebUI wired to Ollama. Future additions: ComfyUI and others.
 
 ## Command Surface
 - Global options: `-v/--version` prints the CLI version; `-h/--help` shows the custom help view plus alias table.
@@ -13,7 +13,14 @@ Provide a Rich + Typer-powered CLI (`airpods/cli.py`, installed as the `airpods`
 - `doctor`: Re-run checks without creating resources; surfaces remediation hints without touching pods/volumes.
 
 ## Architecture Notes
-- Modules: `airpods/cli.py` (Typer entry + wiring, help/alias rendering), `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `podcli` (uv/python wrapper script).
+- CLI package layout:
+  - `airpods/cli/__init__.py` – creates the Typer app, registers commands, exposes legacy compatibility helpers.
+  - `airpods/cli/common.py` – shared constants, service manager, and Podman/dependency helpers.
+  - `airpods/cli/help.py` – Rich-powered help/alias rendering tables used by the root callback.
+  - `airpods/cli/status_view.py` – status table + health probing utilities.
+  - `airpods/cli/commands/` – individual command modules (`init`, `doctor`, `start`, `stop`, `status`, `logs`, `version`) each registering via `commands.__init__.register`.
+  - `airpods/cli/type_defs.py` – shared Typer command mapping type alias.
+- Supporting modules: `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `podcli` (uv/python wrapper script).
 - Pod specs include names, images, ports, env, volumes, and GPU requirements. Easy to extend mapping in `config.py` for new services.
 - Errors surfaced with clear remediation (install Podman, start podman machine, check GPU drivers).
 
