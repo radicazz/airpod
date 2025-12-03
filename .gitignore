@@ -1,6 +1,7 @@
 # Private dev files
 private/
 config.toml
+.coverage
 
 # Uvicorn
 uv.lock
