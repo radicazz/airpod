@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Dict, List
 
 from airpods import state
+from airpods.configuration import get_config
+from airpods.configuration.schema import ServiceConfig
 from airpods.services import ServiceRegistry, ServiceSpec, VolumeMount
 
 
@@ -10,36 +12,34 @@ def _webui_secret_env() -> Dict[str, str]:
     return {"WEBUI_SECRET_KEY": state.ensure_webui_secret()}
 
 
-_SERVICE_SPECS: List[ServiceSpec] = [
-    ServiceSpec(
-        name="ollama",
-        pod="ollama",
-        container="ollama-0",
-        image="docker.io/ollama/ollama:latest",
-        ports=[(11434, 11434)],
-        env={
-            "OLLAMA_ORIGINS": "*",
-            "OLLAMA_HOST": "0.0.0.0",
-        },
-        volumes=[VolumeMount("airpods_ollama_data", "/root/.ollama")],
-        needs_gpu=True,
-        health_path="/api/tags",
-    ),
-    ServiceSpec(
-        name="open-webui",
-        pod="open-webui",
-        container="open-webui-0",
-        image="ghcr.io/open-webui/open-webui:latest",
-        ports=[(3000, 8080)],
-        env={
-            # Reach Ollama via the host-published port.
-            "OLLAMA_BASE_URL": "http://host.containers.internal:11434",
-        },
-        env_factory=_webui_secret_env,
-        volumes=[VolumeMount("airpods_webui_data", "/app/backend/data")],
-        health_path="/",
-    ),
-]
+def _service_spec_from_config(name: str, service: ServiceConfig) -> ServiceSpec:
+    volumes = [
+        VolumeMount(mount.source, mount.target) for mount in service.volumes.values()
+    ]
+    ports = [(port.host, port.container) for port in service.ports]
+    env_factory = _webui_secret_env if service.needs_webui_secret else None
+    return ServiceSpec(
+        name=name,
+        pod=service.pod,
+        container=service.container,
+        image=service.image,
+        ports=ports,
+        env=dict(service.env),
+        env_factory=env_factory,
+        volumes=volumes,
+        needs_gpu=service.gpu.enabled,
+        health_path=service.health.path,
+    )
 
 
-REGISTRY = ServiceRegistry(_SERVICE_SPECS)
+def _load_service_specs() -> List[ServiceSpec]:
+    config = get_config()
+    specs: List[ServiceSpec] = []
+    for name, service in config.services.items():
+        if not service.enabled:
+            continue
+        specs.append(_service_spec_from_config(name, service))
+    return specs
+
+
+REGISTRY = ServiceRegistry(_load_service_specs())

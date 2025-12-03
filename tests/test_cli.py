@@ -1,16 +1,37 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
+try:
+    import tomllib  # Python 3.11+
+except ImportError:  # pragma: no cover
+    import tomli as tomllib
+
+from airpods import state
 from airpods.cli import app
+from airpods.configuration import reload_config
+from airpods.configuration.loader import locate_config_file
 from airpods.services import EnvironmentReport
 from airpods.system import CheckResult
 
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def isolate_config(tmp_path, monkeypatch):
+    """Force configuration artifacts into a temporary directory per test."""
+    home = tmp_path / "airpods-home"
+    monkeypatch.setenv("AIRPODS_HOME", str(home))
+    state.state_root.cache_clear()
+    locate_config_file.cache_clear()
+    reload_config()
+    yield
 
 
 class TestCLIBasics:
@@ -250,3 +271,32 @@ class TestConstants:
         assert DEFAULT_STOP_TIMEOUT > 0
         assert DEFAULT_LOG_LINES > 0
         assert DEFAULT_PING_TIMEOUT > 0
+
+
+class TestConfigCommand:
+    """Tests for the configuration management command."""
+
+    def test_config_init_creates_file(self):
+        home = Path(os.environ["AIRPODS_HOME"])
+        result = runner.invoke(app, ["config", "init", "--force"])
+        assert result.exit_code == 0
+        assert (home / "config.toml").exists()
+
+    def test_config_set_updates_value(self):
+        home = Path(os.environ["AIRPODS_HOME"])
+        result = runner.invoke(
+            app, ["config", "set", "cli.stop_timeout", "45", "--type", "int"]
+        )
+        assert result.exit_code == 0
+        data = tomllib.loads((home / "config.toml").read_text())
+        assert data["cli"]["stop_timeout"] == 45
+
+    def test_config_set_rejects_invalid_values(self):
+        home = Path(os.environ["AIRPODS_HOME"])
+        runner.invoke(app, ["config", "init", "--force"])
+        before = (home / "config.toml").read_text()
+        result = runner.invoke(
+            app, ["config", "set", "cli.stop_timeout", "0", "--type", "int"]
+        )
+        assert result.exit_code != 0
+        assert (home / "config.toml").read_text() == before

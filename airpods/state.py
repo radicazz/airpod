@@ -6,16 +6,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Union
 
+from airpods.paths import detect_repo_root
+
 STATE_ROOT_ENV = "AIRPODS_HOME"
-_PROJECT_MARKERS = ("pyproject.toml", ".git")
 
 
 def _detect_repo_root() -> Optional[Path]:
-    start = Path(__file__).resolve()
-    for parent in start.parents:
-        if any((parent / marker).exists() for marker in _PROJECT_MARKERS):
-            return parent
-    return None
+    """Backwards-compatible wrapper that delegates to airpods.paths."""
+    return detect_repo_root(Path(__file__).resolve())
 
 
 @lru_cache(maxsize=1)

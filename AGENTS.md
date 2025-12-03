@@ -1,7 +1,7 @@
 # Agents & Plan
 
 ## Intent
-Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via Podman. Initial services: Ollama (GGUF-capable) and Open WebUI wired to Ollama. Future additions: ComfyUI and others.
+Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via Podman. Services are configurable via TOML files with template support. Initial services: Ollama (GGUF-capable) and Open WebUI wired to Ollama. Future additions: ComfyUI and others.
 
 ## Command Surface
 - Global options: `-v/--version` prints the CLI version; `-h/--help` shows the custom help view plus alias table.
@@ -11,6 +11,15 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 - `status [service...]`: Rich table showing pod/container state, ports, uptime, and an HTTP ping per service. Exposed aliases: `ps`.
 - `logs [service...]`: Tail logs for specified services or all; supports follow/since/lines.
 - `doctor`: Re-run checks without creating resources; surfaces remediation hints without touching pods/volumes.
+- `config`: Manage configuration with subcommands:
+  - `init`: Create default config file at `$AIRPODS_HOME/config.toml`
+  - `show`: Display current configuration (TOML or JSON format)
+  - `path`: Show configuration file location
+  - `edit`: Open config in `$EDITOR`
+  - `validate`: Check configuration validity
+  - `reset`: Reset to defaults with backup
+  - `get <key>`: Print specific value using dot notation
+  - `set <key> <value>`: Update specific value with validation
 
 ## Architecture Notes
 - CLI package layout:
@@ -18,22 +27,32 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `airpods/cli/common.py` – shared constants, service manager, and Podman/dependency helpers.
   - `airpods/cli/help.py` – Rich-powered help/alias rendering tables used by the root callback.
   - `airpods/cli/status_view.py` – status table + health probing utilities.
-  - `airpods/cli/commands/` – individual command modules (`init`, `doctor`, `start`, `stop`, `status`, `logs`, `version`) each registering via `commands.__init__.register`.
+  - `airpods/cli/commands/` – individual command modules (`init`, `doctor`, `start`, `stop`, `status`, `logs`, `version`, `config`) each registering via `commands.__init__.register`.
   - `airpods/cli/type_defs.py` – shared Typer command mapping type alias.
-- Supporting modules: `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `podcli` (uv/python wrapper script).
-- Pod specs include names, images, ports, env, volumes, and GPU requirements. Easy to extend mapping in `config.py` for new services.
+- Configuration system:
+  - `airpods/configuration/` – Pydantic-based config schema, loader, template resolver, and error types.
+  - `airpods/configuration/schema.py` – ServiceConfig, RuntimeConfig, CLIConfig, DependenciesConfig models.
+  - `airpods/configuration/defaults.py` – Built-in default configuration dictionary.
+  - `airpods/configuration/loader.py` – Config file discovery, TOML loading, merging, caching.
+  - `airpods/configuration/resolver.py` – Template variable resolution (`{{runtime.host_gateway}}`, `{{services.ollama.ports.0.host}}`).
+  - Config priority: `$AIRPODS_CONFIG` → `$AIRPODS_HOME/config.toml` → `<repo_root>/config.toml` → `$XDG_CONFIG_HOME/airpods/config.toml` → `~/.config/airpods/config.toml` → defaults.
+- Supporting modules: `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs from config), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `airpods/paths.py` (repo root detection), `airpods/state.py` (state directory management), `podcli` (uv/python wrapper script).
+- Pod specs dynamically generated from configuration. Service metadata includes `needs_webui_secret` flag for automatic secret injection. Easy to extend services via config files.
 - Errors surfaced with clear remediation (install Podman, start podman machine, check GPU drivers).
 
 ## Data & Images
-- Volumes: `airpods_ollama_data` for models, `airpods_webui_data` for Open WebUI data.
-- Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`; pulled during `init`/`start`.
-- Secrets: Open WebUI secret persisted at `~/.config/airpods/webui_secret` (or `$XDG_CONFIG_HOME/airpods/webui_secret`) during `init`, injected on start.
-- Networking: Open WebUI targets Ollama via host-published `http://host.containers.internal:11434`.
-- Secrets: Open WebUI `WEBUI_SECRET_KEY` generated and stored at `~/.config/airpods/webui_secret` (or `$XDG_CONFIG_HOME/airpods`).
+- Volumes: `airpods_ollama_data` for models, `airpods_webui_data` for Open WebUI data, `airpods_comfyui_models` for ComfyUI (when enabled).
+- Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`, `ghcr.io/comfyanonymous/comfyui:latest`; pulled during `init`/`start`.
+- Secrets: Open WebUI secret persisted at `~/.config/airpods/webui_secret` (or `$XDG_CONFIG_HOME/airpods/webui_secret`) during `init`, injected on start via `needs_webui_secret` flag.
+- Networking: Open WebUI targets Ollama via host-published `http://host.containers.internal:11434` (configurable via templates).
+- Configuration: Optional `config.toml` at `$AIRPODS_HOME` or XDG paths; deep-merged with defaults.
 
 ## Testing Approach
 - Unit tests mock subprocess interactions to validate command flow and flags.
+- Configuration tests verify schema validation, template resolution, and file merging.
+- Test fixtures isolate config artifacts per test via `AIRPODS_HOME` override.
 - Integration (later): optional Podman-in-Podman smoke tests; GPU checks skipped when unavailable.
 
 ## Development Workflow
-- Run `uv format` after code changes and before commits to maintain consistent formatting.
+- Run `uv run pytest` to execute test suite.
+- Format code before commits to maintain consistent style.

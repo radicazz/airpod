@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
@@ -134,6 +135,8 @@ def run_container(
     env: Dict[str, str],
     volumes: Iterable[tuple[str, str]],
     gpu: bool = False,
+    restart_policy: str = "unless-stopped",
+    gpu_device_flag: Optional[str] = None,
 ) -> bool:
     existed = container_exists(name)
     args: List[str] = [
@@ -145,14 +148,14 @@ def run_container(
         "--pod",
         pod,
         "--restart",
-        "unless-stopped",
+        restart_policy,
     ]
     for key, val in env.items():
         args.extend(["-e", f"{key}={val}"])
     for volume_name, dest in volumes:
         args.extend(["-v", f"{volume_name}:{dest}"])
-    if gpu:
-        args.extend(["--device", "nvidia.com/gpu=all"])
+    if gpu and gpu_device_flag:
+        args.extend(shlex.split(gpu_device_flag))
     args.append(image)
     try:
         _run(args, capture=False)

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "airpods"
-version = "0.2.0"
+version = "0.3.0"
 description = "Rich, user-friendly CLI for orchestrating local AI services with Podman and UV."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,8 @@ dependencies = [
   "rich>=13.0,<14.0",
   "click>=8.1,<8.2",
   "tomli>=2.0.1; python_version < '3.11'",
+  "pydantic>=2.0,<3.0",
+  "tomlkit>=0.12.3",
 ]
 
 [project.optional-dependencies]

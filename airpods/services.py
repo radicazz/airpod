@@ -121,10 +121,23 @@ class ServiceManager:
     """Performs the common Podman orchestration tasks."""
 
     def __init__(
-        self, registry: ServiceRegistry, network_name: str = "airpods_network"
+        self,
+        registry: ServiceRegistry,
+        *,
+        network_name: str = "airpods_network",
+        restart_policy: str = "unless-stopped",
+        gpu_device_flag: str | None = None,
+        required_dependencies: Optional[Sequence[str]] = None,
+        optional_dependencies: Optional[Sequence[str]] = None,
     ):
         self.registry = registry
         self.network_name = network_name
+        self.restart_policy = restart_policy
+        self.gpu_device_flag = gpu_device_flag
+        self.required_dependencies = list(
+            required_dependencies or ["podman", "podman-compose", "uv"]
+        )
+        self.optional_dependencies = list(optional_dependencies or [])
 
     # ----------------------------------------------------------------------------------
     # Discovery + validation helpers
@@ -136,9 +149,7 @@ class ServiceManager:
     def report_environment(self) -> EnvironmentReport:
         """Check system dependencies and GPU availability."""
         checks = [
-            check_dependency("podman", ["--version"]),
-            check_dependency("podman-compose", ["--version"]),
-            check_dependency("uv", ["--version"]),
+            check_dependency(dep, ["--version"]) for dep in self.required_dependencies
         ]
         gpu_available, gpu_detail = detect_gpu()
         return EnvironmentReport(
@@ -218,6 +229,8 @@ class ServiceManager:
             env=spec.runtime_env(),
             volumes=[mount.as_tuple() for mount in spec.volumes],
             gpu=spec.needs_gpu and gpu_available and not force_cpu,
+            restart_policy=self.restart_policy,
+            gpu_device_flag=self.gpu_device_flag,
         )
         return ServiceStartResult(
             spec=spec, pod_created=pod_created, container_replaced=container_replaced

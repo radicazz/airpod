@@ -6,15 +6,18 @@ import typer
 
 from airpods import __version__, podman
 from airpods.config import REGISTRY
+from airpods.configuration import get_config
 from airpods.logging import console
 from airpods.services import ServiceManager, ServiceSpec, UnknownServiceError
 
 HELP_OPTION_NAMES = ["-h", "--help"]
 COMMAND_CONTEXT = {"help_option_names": HELP_OPTION_NAMES}
 
-DEFAULT_STOP_TIMEOUT = 10
-DEFAULT_LOG_LINES = 200
-DEFAULT_PING_TIMEOUT = 2.0
+_CONFIG = get_config()
+
+DEFAULT_STOP_TIMEOUT = _CONFIG.cli.stop_timeout
+DEFAULT_LOG_LINES = _CONFIG.cli.log_lines
+DEFAULT_PING_TIMEOUT = _CONFIG.cli.ping_timeout
 
 DOCTOR_REMEDIATIONS = {
     "podman": "Install Podman: https://podman.io/docs/installation",
@@ -30,7 +33,14 @@ COMMAND_ALIASES = {
 
 ALIAS_HELP_TEMPLATE = "[alias]Alias for {canonical}[/]"
 
-manager = ServiceManager(REGISTRY)
+manager = ServiceManager(
+    REGISTRY,
+    network_name=_CONFIG.runtime.network_name,
+    restart_policy=_CONFIG.runtime.restart_policy,
+    gpu_device_flag=_CONFIG.runtime.gpu_device_flag,
+    required_dependencies=_CONFIG.dependencies.required,
+    optional_dependencies=_CONFIG.dependencies.optional,
+)
 
 
 def resolve_services(names: Optional[list[str]]) -> list[ServiceSpec]:
