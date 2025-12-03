@@ -5,7 +5,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from airpods.cli import app, COMMAND_ALIASES
+from airpods.cli import app
+from airpods.services import EnvironmentReport
+from airpods.system import CheckResult
 
 
 runner = CliRunner()
@@ -31,13 +33,6 @@ class TestCLIBasics:
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0
         assert "airpods" in result.stdout
-
-    def test_alias_command(self):
-        """Test alias command shows command aliases."""
-        result = runner.invoke(app, ["alias"])
-        assert result.exit_code == 0
-        for alias, canonical in COMMAND_ALIASES.items():
-            assert alias in result.stdout or canonical in result.stdout
 
 
 class TestCommandAliases:
@@ -72,6 +67,66 @@ class TestCommandAliases:
 
         result = runner.invoke(app, ["ps"])
         assert result.exit_code == 0
+
+
+class TestDoctorCommand:
+    """Test the doctor command behavior."""
+
+    @patch("airpods.cli.ui.show_environment")
+    @patch("airpods.cli.manager")
+    def test_doctor_success(self, mock_manager, mock_show_env):
+        report = EnvironmentReport(checks=[], gpu_available=False, gpu_detail="n/a")
+        mock_manager.report_environment.return_value = report
+
+        result = runner.invoke(app, ["doctor"])
+
+        assert result.exit_code == 0
+        assert "doctor complete" in result.stdout.lower()
+        mock_show_env.assert_called_once_with(report)
+
+    @patch("airpods.cli.ui.show_environment")
+    @patch("airpods.cli.manager")
+    def test_doctor_missing_dependency(self, mock_manager, mock_show_env):
+        report = EnvironmentReport(
+            checks=[CheckResult(name="podman", ok=False, detail="not found")],
+            gpu_available=False,
+            gpu_detail="n/a",
+        )
+        mock_manager.report_environment.return_value = report
+
+        result = runner.invoke(app, ["doctor"])
+
+        assert result.exit_code == 1
+        assert "missing dependencies" in result.stdout.lower()
+
+
+class TestStatusCommand:
+    """Test enhanced status command behavior."""
+
+    @patch("airpods.cli._render_status")
+    @patch("airpods.cli._ensure_podman_available")
+    @patch("airpods.cli._resolve_services")
+    def test_status_watch_handles_interrupt(
+        self, mock_resolve, mock_ensure, mock_render
+    ):
+        mock_resolve.return_value = [MagicMock()]
+        mock_render.side_effect = [None]
+
+        with patch("airpods.cli.time.sleep", side_effect=KeyboardInterrupt):
+            result = runner.invoke(app, ["status", "--watch", "0.1"])
+
+        assert result.exit_code == 0
+        mock_render.assert_called()
+
+    @patch("airpods.cli._ensure_podman_available")
+    @patch("airpods.cli._resolve_services")
+    def test_status_invalid_watch_value(self, mock_resolve, mock_ensure):
+        mock_resolve.return_value = []
+
+        result = runner.invoke(app, ["status", "--watch", "0"])
+
+        assert result.exit_code != 0
+        assert "watch interval must be positive" in result.stdout.lower()
 
 
 class TestServiceResolution:

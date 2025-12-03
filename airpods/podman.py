@@ -15,15 +15,25 @@ class PodmanError(RuntimeError):
 def _run(
     args: List[str], capture: bool = True, check: bool = True
 ) -> subprocess.CompletedProcess[str]:
+    """Run a podman command and return the completed process.
+
+    Output is always captured so Rich spinners stay clean. Callers can read
+    proc.stdout when needed.
+    """
     cmd = ["podman"] + args
     proc = subprocess.run(
         cmd,
         text=True,
-        stdout=subprocess.PIPE if capture else None,
-        stderr=subprocess.STDOUT if capture else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         check=check,
     )
     return proc
+
+
+def _format_exc_output(exc: subprocess.CalledProcessError) -> str:
+    output = getattr(exc, "stdout", None) or getattr(exc, "output", None)
+    return output.strip() if output else ""
 
 
 def volume_exists(name: str) -> bool:
@@ -40,7 +50,11 @@ def ensure_volume(name: str) -> None:
     try:
         _run(["volume", "create", name], capture=False)
     except subprocess.CalledProcessError as exc:
-        raise PodmanError(f"failed to create volume {name}: {exc}") from exc
+        detail = _format_exc_output(exc)
+        msg = f"failed to create volume {name}"
+        if detail:
+            msg = f"{msg}: {detail}"
+        raise PodmanError(msg) from exc
 
 
 def network_exists(name: str) -> bool:
@@ -57,14 +71,22 @@ def ensure_network(name: str) -> None:
     try:
         _run(["network", "create", name], capture=False)
     except subprocess.CalledProcessError as exc:
-        raise PodmanError(f"failed to create network {name}: {exc}") from exc
+        detail = _format_exc_output(exc)
+        msg = f"failed to create network {name}"
+        if detail:
+            msg = f"{msg}: {detail}"
+        raise PodmanError(msg) from exc
 
 
 def pull_image(image: str) -> None:
     try:
         _run(["pull", image], capture=False)
     except subprocess.CalledProcessError as exc:
-        raise PodmanError(f"failed to pull image {image}: {exc}") from exc
+        detail = _format_exc_output(exc)
+        msg = f"failed to pull image {image}"
+        if detail:
+            msg = f"{msg}: {detail}"
+        raise PodmanError(msg) from exc
 
 
 def pod_exists(pod: str) -> bool:
@@ -94,7 +116,11 @@ def ensure_pod(
     try:
         _run(args, capture=False)
     except subprocess.CalledProcessError as exc:
-        raise PodmanError(f"failed to create pod {pod}: {exc}") from exc
+        detail = _format_exc_output(exc)
+        msg = f"failed to create pod {pod}"
+        if detail:
+            msg = f"{msg}: {detail}"
+        raise PodmanError(msg) from exc
 
 
 def run_container(
@@ -127,7 +153,11 @@ def run_container(
     try:
         _run(args, capture=False)
     except subprocess.CalledProcessError as exc:
-        raise PodmanError(f"failed to start container {name}: {exc}") from exc
+        detail = _format_exc_output(exc)
+        msg = f"failed to start container {name}"
+        if detail:
+            msg = f"{msg}: {detail}"
+        raise PodmanError(msg) from exc
 
 
 def pod_status() -> List[Dict]:
@@ -155,14 +185,22 @@ def stop_pod(name: str, timeout: int = 10) -> None:
     try:
         _run(["pod", "stop", "--ignore", f"--time={timeout}", name], capture=False)
     except subprocess.CalledProcessError as exc:
-        raise PodmanError(f"failed to stop pod {name}: {exc}") from exc
+        detail = _format_exc_output(exc)
+        msg = f"failed to stop pod {name}"
+        if detail:
+            msg = f"{msg}: {detail}"
+        raise PodmanError(msg) from exc
 
 
 def remove_pod(name: str) -> None:
     try:
         _run(["pod", "rm", "--force", "--ignore", name], capture=False)
     except subprocess.CalledProcessError as exc:
-        raise PodmanError(f"failed to remove pod {name}: {exc}") from exc
+        detail = _format_exc_output(exc)
+        msg = f"failed to remove pod {name}"
+        if detail:
+            msg = f"{msg}: {detail}"
+        raise PodmanError(msg) from exc
 
 
 def stream_logs(

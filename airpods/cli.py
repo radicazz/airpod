@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import sys
+import time
 import http.client
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any, List, Optional
 
 import click
 import typer
@@ -22,6 +24,12 @@ COMMAND_CONTEXT = {"help_option_names": HELP_OPTION_NAMES}
 DEFAULT_STOP_TIMEOUT = 10
 DEFAULT_LOG_LINES = 200
 DEFAULT_PING_TIMEOUT = 2.0
+
+DOCTOR_REMEDIATIONS = {
+    "podman": "Install Podman: https://podman.io/docs/installation",
+    "podman-compose": "Install podman-compose (often via your package manager).",
+    "uv": "Install uv: https://github.com/astral-sh/uv",
+}
 
 app = typer.Typer(
     help="Orchestrate local AI services (Ollama, Open WebUI) with Podman + UV.",
@@ -224,6 +232,25 @@ def init() -> None:
 
 
 @app.command(context_settings=COMMAND_CONTEXT)
+def doctor() -> None:
+    """Re-run environment checks without mutating resources."""
+    report = manager.report_environment()
+    ui.show_environment(report)
+
+    if report.missing:
+        console.print("[error]Missing dependencies detected:[/]")
+        for dep in report.missing:
+            guidance = DOCTOR_REMEDIATIONS.get(
+                dep, "Install it or ensure it is on your PATH."
+            )
+            console.print(f"[error]- {dep}[/] {guidance}")
+        console.print("[error]Resolve the missing dependencies and re-run doctor.[/]")
+        raise typer.Exit(code=1)
+
+    ui.success_panel("doctor complete: environment ready.")
+
+
+@app.command(context_settings=COMMAND_CONTEXT)
 def start(
     service: Optional[list[str]] = typer.Argument(
         None, help="Services to start (default: all)."
@@ -304,49 +331,33 @@ def status(
     service: Optional[list[str]] = typer.Argument(
         None, help="Services to report (default: all)."
     ),
+    watch: Optional[float] = typer.Option(
+        None, "--watch", "-w", help="Refresh interval in seconds."
+    ),
 ) -> None:
     """Show pod status."""
     specs = _resolve_services(service)
     _ensure_podman_available()
-    pod_rows = manager.pod_status_rows()
+    if watch is not None and watch <= 0:
+        raise typer.BadParameter("watch interval must be positive.")
 
-    table = Table(title="Pods", header_style="bold cyan")
-    table.add_column("Service")
-    table.add_column("Pod")
-    table.add_column("Status")
-    table.add_column("Ports")
-    table.add_column("Containers")
-    table.add_column("Ping")
+    def _run_once() -> None:
+        _render_status(specs)
 
-    for spec in specs:
-        row = pod_rows.get(spec.pod)
-        if not row:
-            table.add_row(spec.name, spec.pod, "[warn]absent", "-", "-", "-")
-            continue
-        port_bindings = manager.service_ports(spec)
-        ports = []
-        for container_port, bindings in port_bindings.items():
-            for binding in bindings or []:
-                host_port = binding.get("HostPort", "")
-                ports.append(f"{host_port}->{container_port}")
-        ports_display = (
-            ", ".join(ports)
-            if ports
-            else (", ".join(row.get("Ports", [])) if row.get("Ports") else "-")
-        )
-        containers = str(row.get("NumberOfContainers", "?") or "?")
-        host_port = _extract_host_port(spec, port_bindings)
-        ping_status = _ping_service(spec, host_port) if host_port else "-"
-        table.add_row(
-            spec.name,
-            spec.pod,
-            row.get("Status", "?"),
-            ports_display,
-            containers,
-            ping_status,
-        )
+    if watch is None:
+        _run_once()
+        return
 
-    console.print(table)
+    try:
+        while True:
+            console.clear()
+            _run_once()
+            console.print(
+                f"[dim]Refreshed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (Ctrl+C to stop)[/]"
+            )
+            time.sleep(watch)
+    except KeyboardInterrupt:
+        console.print("[info]Stopped watching status.")
 
 
 app.command(
@@ -357,29 +368,96 @@ app.command(
 )(status)
 
 
-@app.command(context_settings=COMMAND_CONTEXT)
-def alias() -> None:
-    """Show command aliases."""
-    ui.show_command_aliases(COMMAND_ALIASES)
+def _render_status(specs: List[ServiceSpec]) -> None:
+    """Render the pod status table."""
+    pod_rows = manager.pod_status_rows()
+    table = Table(title="Pods", header_style="bold cyan")
+    table.add_column("Service")
+    table.add_column("Pod")
+    table.add_column("Status")
+    table.add_column("Ports")
+    table.add_column("Containers")
+    table.add_column("Health")
+    table.add_column("URL")
+
+    for spec in specs:
+        row = pod_rows.get(spec.pod)
+        if not row:
+            table.add_row(spec.name, spec.pod, "[warn]absent", "-", "-", "-", "-")
+            continue
+        port_bindings = manager.service_ports(spec)
+        ports: list[str] = []
+        for container_port, bindings in port_bindings.items():
+            for binding in bindings or []:
+                host_port = binding.get("HostPort", "")
+                ports.append(f"{host_port}->{container_port}")
+        ports_display = (
+            ", ".join(ports) if ports else _format_row_ports(row.get("Ports"))
+        )
+        containers = _container_count(row)
+        host_ports = _collect_host_ports(spec, port_bindings)
+        host_port = host_ports[0] if host_ports else None
+        health = _ping_service(spec, host_port)
+        url_text = ", ".join(_format_host_urls(host_ports)) if host_ports else "-"
+        table.add_row(
+            spec.name,
+            spec.pod,
+            row.get("Status", "?"),
+            ports_display,
+            containers,
+            health,
+            url_text,
+        )
+
+    console.print(table)
 
 
-def _extract_host_port(
-    spec: ServiceSpec, port_bindings: dict[str, Any]
-) -> Optional[int]:
-    """Extract the host port from port bindings or service spec."""
-    # Prefer actual bindings; fallback to configured host port.
-    if port_bindings:
-        first_binding = next(iter(port_bindings.values()), None)
-        if first_binding:
-            host_port = (first_binding[0] or {}).get("HostPort")
-            if host_port:
-                try:
-                    return int(host_port)
-                except ValueError:
-                    return None
-    if spec.ports:
-        return spec.ports[0][0]
-    return None
+def _collect_host_ports(spec: ServiceSpec, port_bindings: dict[str, Any]) -> List[int]:
+    """Return the list of host ports published for a service."""
+    host_ports: List[int] = []
+    for bindings in port_bindings.values():
+        for binding in bindings or []:
+            host_port = binding.get("HostPort")
+            if not host_port:
+                continue
+            try:
+                value = int(host_port)
+            except (TypeError, ValueError):
+                continue
+            if value not in host_ports:
+                host_ports.append(value)
+    if not host_ports:
+        for host_port, _ in spec.ports:
+            if host_port not in host_ports:
+                host_ports.append(host_port)
+    return host_ports
+
+
+def _format_host_urls(host_ports: List[int]) -> List[str]:
+    """Format user-friendly localhost URLs for each host port."""
+    return [f"http://localhost:{port}" for port in host_ports]
+
+
+def _format_row_ports(entries: Optional[list[str]]) -> str:
+    if not entries:
+        return "-"
+    cleaned = []
+    for entry in entries:
+        text = entry or ""
+        if "/" in text:
+            text = text.split("/", 1)[0]
+        cleaned.append(text)
+    return ", ".join(cleaned) if cleaned else "-"
+
+
+def _container_count(row: dict[str, Any]) -> str:
+    value = row.get("NumberOfContainers")
+    if isinstance(value, int):
+        return str(value)
+    containers = row.get("Containers") or row.get("ContainerInfo")
+    if isinstance(containers, list):
+        return str(len(containers))
+    return "?"
 
 
 def _ping_service(spec: ServiceSpec, port: Optional[int]) -> str:
@@ -387,6 +465,7 @@ def _ping_service(spec: ServiceSpec, port: Optional[int]) -> str:
     if not spec.health_path or port is None:
         return "-"
     try:
+        start = time.perf_counter()
         conn = http.client.HTTPConnection(
             "127.0.0.1", port, timeout=DEFAULT_PING_TIMEOUT
         )
@@ -394,9 +473,10 @@ def _ping_service(spec: ServiceSpec, port: Optional[int]) -> str:
         resp = conn.getresponse()
         code = resp.status
         conn.close()
+        elapsed_ms = (time.perf_counter() - start) * 1000
         if 200 <= code < 400:
-            return "[ok]ok"
-        return f"[warn]{code}"
+            return f"[ok]{code} ({elapsed_ms:.0f} ms)"
+        return f"[warn]{code} ({elapsed_ms:.0f} ms)"
     except Exception as exc:  # noqa: BLE001
         return f"[warn]{type(exc).__name__}"
 

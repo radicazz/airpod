@@ -10,8 +10,7 @@ Provide a Rich + Typer-powered CLI (`airpods/cli.py`, installed as the `airpods`
 - `stop [service...]`: Graceful stop; optional removal of pods while preserving volumes by default. Exposed aliases: `down`.
 - `status [service...]`: Rich table showing pod/container state, ports, uptime, and an HTTP ping per service. Exposed aliases: `ps`.
 - `logs [service...]`: Tail logs for specified services or all; supports follow/since/lines.
-- `alias`: Rich table showing the canonical commands alongside their shorthand aliases.
-- Optional `doctor`: Re-run checks without creating resources (not yet implemented).
+- `doctor`: Re-run checks without creating resources; surfaces remediation hints without touching pods/volumes.
 
 ## Architecture Notes
 - Modules: `airpods/cli.py` (Typer entry + wiring, help/alias rendering), `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `podcli` (uv/python wrapper script).
