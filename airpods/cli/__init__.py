@@ -5,8 +5,9 @@ import time as _time
 
 import typer
 
-from airpods import __description__, podman
+from airpods import __description__
 from airpods.logging import console
+from airpods.runtime import ContainerRuntimeError
 
 from .commands import register as register_commands
 from .common import (
@@ -61,7 +62,7 @@ def _root_command(
 def main() -> None:
     try:
         app()
-    except podman.PodmanError as exc:
+    except ContainerRuntimeError as exc:
         console.print(f"[error]{exc}[/]")
         sys.exit(1)
 

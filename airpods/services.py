@@ -14,8 +14,8 @@ from typing import (
     Tuple,
 )
 
-from airpods import podman, state
-from airpods.runtime import ContainerRuntime
+from airpods import state
+from airpods.runtime import ContainerRuntime, ContainerRuntimeError
 from airpods.system import CheckResult, check_dependency, detect_gpu
 
 
@@ -163,7 +163,7 @@ class ServiceManager:
         """Verify podman is installed and available."""
         report = self.report_environment()
         if "podman" in report.missing:
-            raise podman.PodmanError("podman is required; install it and retry.")
+            raise ContainerRuntimeError("podman is required; install it and retry.")
 
     # ----------------------------------------------------------------------------------
     # Pod + container orchestration

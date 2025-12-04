@@ -4,11 +4,11 @@ from typing import Optional
 
 import typer
 
-from airpods import __version__, podman
+from airpods import __version__
 from airpods.config import REGISTRY
 from airpods.configuration import get_config
 from airpods.logging import console
-from airpods.runtime import get_runtime
+from airpods.runtime import ContainerRuntimeError, get_runtime
 from airpods.services import (
     ServiceManager,
     ServiceSpec,
@@ -65,7 +65,7 @@ def ensure_podman_available() -> None:
     """Ensure Podman is available before running commands."""
     try:
         manager.ensure_podman()
-    except podman.PodmanError as exc:  # pragma: no cover - interacts with system
+    except ContainerRuntimeError as exc:  # pragma: no cover - interacts with system
         console.print(f"[error]{exc}[/]")
         raise typer.Exit(code=1)
 
