@@ -265,3 +265,19 @@ class ServiceManager:
     def pod_status_rows(self) -> Dict[str, Dict[str, Any]]:
         """Return pod status indexed by pod name."""
         return {row.get("Name"): row for row in self.runtime.pod_status()}
+
+    def stream_logs(
+        self,
+        container: str,
+        *,
+        follow: bool = False,
+        tail: Optional[int] = None,
+        since: Optional[str] = None,
+    ) -> int:
+        """Stream logs from a container.
+
+        Returns the exit code of the log streaming process.
+        """
+        return self.runtime.stream_logs(
+            container, follow=follow, tail=tail, since=since
+        )

@@ -6,13 +6,14 @@ from typing import Optional
 
 import typer
 
-from airpods import podman, ui
+from airpods import ui
 from airpods.logging import console
 
 from ..common import (
     COMMAND_CONTEXT,
     DEFAULT_LOG_LINES,
     ensure_podman_available,
+    manager,
     resolve_services,
 )
 from ..completions import service_name_completion
@@ -51,7 +52,7 @@ def register(app: typer.Typer) -> CommandMap:
             if idx > 0:
                 console.print()
             ui.info_panel(f"Logs for {spec.name} ({spec.container})")
-            code = podman.stream_logs(
+            code = manager.stream_logs(
                 spec.container, follow=follow, tail=lines, since=since
             )
             if code != 0:
