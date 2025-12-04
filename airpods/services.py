@@ -15,6 +15,7 @@ from typing import (
 )
 
 from airpods import podman, state
+from airpods.runtime import ContainerRuntime
 from airpods.system import CheckResult, check_dependency, detect_gpu
 
 
@@ -123,6 +124,7 @@ class ServiceManager:
     def __init__(
         self,
         registry: ServiceRegistry,
+        runtime: ContainerRuntime,
         *,
         network_name: str = "airpods_network",
         restart_policy: str = "unless-stopped",
@@ -131,6 +133,7 @@ class ServiceManager:
         optional_dependencies: Optional[Sequence[str]] = None,
     ):
         self.registry = registry
+        self.runtime = runtime
         self.network_name = network_name
         self.restart_policy = restart_policy
         self.gpu_device_flag = gpu_device_flag
@@ -167,7 +170,7 @@ class ServiceManager:
     # ----------------------------------------------------------------------------------
     def ensure_network(self) -> bool:
         """Create the shared pod network if it doesn't exist."""
-        return podman.ensure_network(self.network_name)
+        return self.runtime.ensure_network(self.network_name)
 
     def ensure_volumes(self, specs: Iterable[ServiceSpec]) -> List[VolumeEnsureResult]:
         """Create all volumes required by the given service specs."""
@@ -190,7 +193,7 @@ class ServiceManager:
                         )
                     )
                     continue
-                created = podman.ensure_volume(mount.source)
+                created = self.runtime.ensure_volume(mount.source)
                 results.append(
                     VolumeEnsureResult(
                         source=mount.source,
@@ -213,7 +216,7 @@ class ServiceManager:
         for index, spec in enumerate(spec_list, start=1):
             if progress_callback:
                 progress_callback("start", index, total, spec)
-            podman.pull_image(spec.image)
+            self.runtime.pull_image(spec.image)
             if progress_callback:
                 progress_callback("end", index, total, spec)
 
@@ -221,8 +224,10 @@ class ServiceManager:
         self, spec: ServiceSpec, *, gpu_available: bool, force_cpu: bool = False
     ) -> ServiceStartResult:
         """Start a service by creating its pod and running its container."""
-        pod_created = podman.ensure_pod(spec.pod, spec.ports, network=self.network_name)
-        container_replaced = podman.run_container(
+        pod_created = self.runtime.ensure_pod(
+            spec.pod, spec.ports, network=self.network_name
+        )
+        container_replaced = self.runtime.run_container(
             pod=spec.pod,
             name=spec.container,
             image=spec.image,
@@ -238,25 +243,25 @@ class ServiceManager:
 
     def container_exists(self, spec: ServiceSpec) -> bool:
         """Return True if the service's container already exists."""
-        return podman.container_exists(spec.container)
+        return self.runtime.container_exists(spec.container)
 
     def stop_service(
         self, spec: ServiceSpec, *, remove: bool = False, timeout: int = 10
     ) -> bool:
         """Stop a service's pod; returns True if pod existed."""
-        if not podman.pod_exists(spec.pod):
+        if not self.runtime.pod_exists(spec.pod):
             return False
-        podman.stop_pod(spec.pod, timeout=timeout)
+        self.runtime.stop_pod(spec.pod, timeout=timeout)
         if remove:
-            podman.remove_pod(spec.pod)
+            self.runtime.remove_pod(spec.pod)
         return True
 
     def service_ports(self, spec: ServiceSpec) -> Dict[str, List[Dict[str, str]]]:
         """Extract port bindings from a service's pod."""
-        inspect_info = podman.pod_inspect(spec.pod) or {}
+        inspect_info = self.runtime.pod_inspect(spec.pod) or {}
         infra = inspect_info.get("InfraConfig", {})
         return infra.get("PortBindings", {})
 
     def pod_status_rows(self) -> Dict[str, Dict[str, Any]]:
         """Return pod status indexed by pod name."""
-        return {row.get("Name"): row for row in podman.pod_status()}
+        return {row.get("Name"): row for row in self.runtime.pod_status()}

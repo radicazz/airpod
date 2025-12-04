@@ -8,6 +8,7 @@ from airpods import __version__, podman
 from airpods.config import REGISTRY
 from airpods.configuration import get_config
 from airpods.logging import console
+from airpods.runtime import get_runtime
 from airpods.services import (
     ServiceManager,
     ServiceSpec,
@@ -19,6 +20,7 @@ HELP_OPTION_NAMES = ("-h", "--help")
 COMMAND_CONTEXT = {"help_option_names": []}
 
 _CONFIG = get_config()
+_RUNTIME = get_runtime(_CONFIG.runtime.prefer)
 
 DEFAULT_STOP_TIMEOUT = _CONFIG.cli.stop_timeout
 DEFAULT_LOG_LINES = _CONFIG.cli.log_lines
@@ -42,6 +44,7 @@ ALIAS_HELP_TEMPLATE = "[alias]Alias for {canonical}[/]"
 
 manager = ServiceManager(
     REGISTRY,
+    _RUNTIME,
     network_name=_CONFIG.runtime.network_name,
     restart_policy=_CONFIG.runtime.restart_policy,
     gpu_device_flag=_CONFIG.runtime.gpu_device_flag,
