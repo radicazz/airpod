@@ -76,16 +76,16 @@ DEFAULT_CONFIG_DICT = {
             "needs_webui_secret": True,
         },
         "comfyui": {
-            "enabled": False,
-            "image": "ghcr.io/comfyanonymous/comfyui:latest",
+            "enabled": True,
+            "image": "docker.io/yanwk/comfyui-boot:cu128-slim",
             "pod": "comfyui",
             "container": "comfyui-0",
             "network_aliases": ["comfyui"],
-            "ports": [{"host": 7860, "container": 7860}],
+            "ports": [{"host": 8188, "container": 8188}],
             "volumes": {
                 "models": {
                     "source": "airpods_comfyui_models",
-                    "target": "/app/models",
+                    "target": "/root/ComfyUI/models",
                 }
             },
             "gpu": {"enabled": True, "force_cpu": False},

@@ -68,6 +68,7 @@ def register(app: typer.Typer) -> CommandMap:
         print_volume_status(volume_results)
 
         image_states: dict[str, str] = {spec.name: "pending" for spec in specs}
+        image_sizes: dict[str, str] = {}
 
         def _make_table() -> Table:
             """Create the live-updating image pull table."""
@@ -76,17 +77,19 @@ def register(app: typer.Typer) -> CommandMap:
             )
             table.add_column("Service", style="cyan")
             table.add_column("Image", style="dim")
+            table.add_column("Size", style="dim", justify="right")
             table.add_column("Status", style="")
 
             for spec in specs:
                 state_val = image_states[spec.name]
+                size = image_sizes.get(spec.name, "")
                 if state_val == "pending":
-                    table.add_row(spec.name, spec.image, "[dim]Waiting...")
+                    table.add_row(spec.name, spec.image, size, "[dim]Waiting...")
                 elif state_val == "pulling":
                     spinner = Spinner("dots", style="info")
-                    table.add_row(spec.name, spec.image, spinner)
+                    table.add_row(spec.name, spec.image, size, spinner)
                 elif state_val == "done":
-                    table.add_row(spec.name, spec.image, "[ok]✓ Ready")
+                    table.add_row(spec.name, spec.image, size, "[ok]✓ Ready")
 
             return table
 
@@ -100,6 +103,13 @@ def register(app: typer.Typer) -> CommandMap:
                 live.update(_make_table())
 
             manager.pull_images(specs, progress_callback=_image_progress)
+            
+            # Get image sizes after all pulls complete
+            for spec in specs:
+                size = manager.runtime.image_size(spec.image)
+                if size:
+                    image_sizes[spec.name] = size
+            live.update(_make_table())
 
         with status_spinner("Preparing Open WebUI secret"):
             secret = state.ensure_webui_secret()

@@ -1,6 +1,6 @@
 # docs/plans/service-comfyui
 
-**STATUS:** IMPLEMENTED (v0.4.0) - Service defined in config, disabled by default
+**STATUS:** IMPLEMENTED (v0.5.0) - Service enabled by default using yanwk/comfyui-boot community image
 
 ## Purpose
 
@@ -41,6 +41,21 @@
   - For internal-only automation, skip host binds and call via the Podman network.
 
 ## Configuration & Deployment Notes
+
+### Current Implementation (v0.5.0+)
+
+- **Image**: `docker.io/yanwk/comfyui-boot:cu128-slim` 
+  - Community-maintained image with CUDA 12.8, Python 3.12
+  - Includes ComfyUI + ComfyUI-Manager out of the box
+  - Alternative to build your own: future plan is to fork and customize
+  - Other variants: `cu126-slim`, `cu128-megapak`, `rocm`, `xpu`, `cpu`
+- **Port**: `8188` (ComfyUI standard) mapped to host
+- **Volume**: `airpods_comfyui_models` → `/root/ComfyUI/models`
+- **GPU**: Auto-detected and enabled; CPU fallback available
+- **Health**: HTTP check on `/`
+- **Network**: Internal alias `comfyui` for service-to-service calls
+
+### Legacy Documentation
 
 - **Service spec (illustrative shape)**:
   - Image: ComfyUI official container (GPU/CPU variant per host).

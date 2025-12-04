@@ -115,6 +115,21 @@ def pull_image(image: str) -> None:
         raise PodmanError(msg) from exc
 
 
+def image_size(image: str) -> Optional[str]:
+    """Get the size of an image in human-readable format."""
+    try:
+        proc = _run(["image", "inspect", image, "--format", "{{.Size}}"])
+        size_bytes = int(proc.stdout.strip())
+        # Convert to human-readable format
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f}{unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f}TB"
+    except (subprocess.CalledProcessError, ValueError):
+        return None
+
+
 def pod_exists(pod: str) -> bool:
     try:
         _run(["pod", "inspect", pod])

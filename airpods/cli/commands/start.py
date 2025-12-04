@@ -125,6 +125,7 @@ def register(app: typer.Typer) -> CommandMap:
             spec.name: "pulling" for spec in specs_to_start
         }
         service_urls: dict[str, str] = {spec.name: "" for spec in specs_to_start}
+        image_sizes: dict[str, str] = {}
         start_time = time.time()
 
         def _make_unified_table() -> Table:
@@ -134,32 +135,34 @@ def register(app: typer.Typer) -> CommandMap:
             )
             table.add_column("Service", style="cyan")
             table.add_column("Image", style="dim")
+            table.add_column("Size", style="dim", justify="right")
             table.add_column("Status", style="")
 
             for spec in specs_to_start:
                 state_val = service_states[spec.name]
                 url = service_urls[spec.name]
+                size = image_sizes.get(spec.name, "")
 
                 if state_val == "pulling":
                     spinner = Spinner("dots", style="info")
-                    table.add_row(spec.name, spec.image, spinner)
+                    table.add_row(spec.name, spec.image, size, spinner)
                 elif state_val == "pulled":
-                    table.add_row(spec.name, spec.image, "[ok]✓ Ready")
+                    table.add_row(spec.name, spec.image, size, "[ok]✓ Ready")
                 elif state_val == "starting":
                     spinner = Spinner("dots", style="info")
-                    table.add_row(spec.name, spec.image, spinner)
+                    table.add_row(spec.name, spec.image, size, spinner)
                 elif state_val == "started":
                     spinner = Spinner("dots", style="info")
-                    table.add_row(spec.name, spec.image, spinner)
+                    table.add_row(spec.name, spec.image, size, spinner)
                 elif state_val == "healthy":
                     if url:
-                        table.add_row(spec.name, spec.image, f"[ok]✓ {url}")
+                        table.add_row(spec.name, spec.image, size, f"[ok]✓ {url}")
                     else:
-                        table.add_row(spec.name, spec.image, "[ok]✓ Healthy")
+                        table.add_row(spec.name, spec.image, size, "[ok]✓ Healthy")
                 elif state_val == "failed":
-                    table.add_row(spec.name, spec.image, "[error]✗ Failed")
+                    table.add_row(spec.name, spec.image, size, "[error]✗ Failed")
                 elif state_val == "timeout":
-                    table.add_row(spec.name, spec.image, "[warn]⏱ Timeout")
+                    table.add_row(spec.name, spec.image, size, "[warn]⏱ Timeout")
 
             elapsed = time.time() - start_time
             table.caption = f"[dim]Elapsed: {int(elapsed)}s"
@@ -175,6 +178,13 @@ def register(app: typer.Typer) -> CommandMap:
                 live.update(_make_unified_table())
 
             manager.pull_images(specs_to_start, progress_callback=_image_progress)
+            
+            # Get image sizes after all pulls complete
+            for spec in specs_to_start:
+                size = manager.runtime.image_size(spec.image)
+                if size:
+                    image_sizes[spec.name] = size
+            live.update(_make_unified_table())
 
             # Start containers
             for spec in specs_to_start:

@@ -106,6 +106,10 @@ class ContainerRuntime(Protocol):
         """
         ...
 
+    def image_size(self, image: str) -> Optional[str]:
+        """Get the size of an image in human-readable format."""
+        ...
+
 
 class PodmanRuntime:
     """Podman implementation of the container runtime interface."""
@@ -215,6 +219,9 @@ class PodmanRuntime:
         since: Optional[str] = None,
     ) -> int:
         return podman.stream_logs(container, follow=follow, tail=tail, since=since)
+
+    def image_size(self, image: str) -> Optional[str]:
+        return podman.image_size(image)
 
 
 def get_runtime(prefer: str | None) -> ContainerRuntime:

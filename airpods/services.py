@@ -241,6 +241,13 @@ class ServiceManager:
             if progress_callback:
                 progress_callback("end", index, total, spec)
 
+    def get_image_sizes(self, specs: Iterable[ServiceSpec]) -> Dict[str, Optional[str]]:
+        """Get image sizes for all specs."""
+        sizes = {}
+        for spec in specs:
+            sizes[spec.name] = self.runtime.image_size(spec.image)
+        return sizes
+
     def start_service(
         self, spec: ServiceSpec, *, gpu_available: bool, force_cpu: bool = False
     ) -> ServiceStartResult:

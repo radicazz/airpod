@@ -1,7 +1,7 @@
 # Agents & Plan
 
 ## Intent
-Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via Podman. Services are configurable via TOML files with template support. Initial services: Ollama (GGUF-capable) and Open WebUI wired to Ollama. Future additions: ComfyUI and others.
+Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via Podman. Services are configurable via TOML files with template support. Services: Ollama (GGUF-capable), Open WebUI wired to Ollama, and ComfyUI (using yanwk/comfyui-boot community image; future plan to fork and build custom).
 
 ## Command Surface
 - Global options: `-v/--version` prints the CLI version; `-h/--help` shows the custom help view plus alias table.
@@ -42,8 +42,8 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 - Errors surfaced with clear remediation (install Podman, start podman machine, check GPU drivers).
 
 ## Data & Images
-- Volumes: `airpods_ollama_data` for models, `airpods_webui_data` for Open WebUI data, `airpods_comfyui_models` for ComfyUI (when enabled).
-- Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`, `ghcr.io/comfyanonymous/comfyui:latest`; pulled during `init`/`start`.
+- Volumes: `airpods_ollama_data` for models, `airpods_webui_data` for Open WebUI data, `airpods_comfyui_models` for ComfyUI models.
+- Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`, `docker.io/yanwk/comfyui-boot:cu128-slim`; pulled during `init`/`start`.
 - Secrets: Open WebUI secret persisted at `$AIRPODS_HOME/configs/webui_secret` (or `$XDG_CONFIG_HOME/airpods/configs/webui_secret` or `~/.config/airpods/configs/webui_secret`) during `init`, injected on start via `needs_webui_secret` flag.
 - Networking: Open WebUI targets Ollama via host-published `http://host.containers.internal:11434` (configurable via templates).
 - Configuration: Optional `config.toml` in `configs/` subdirectory at `$AIRPODS_HOME` or XDG paths; deep-merged with defaults. All airpods configuration files (config.toml, webui_secret, etc.) are stored together in the `configs/` subdirectory.
