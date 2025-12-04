@@ -83,18 +83,16 @@ def print_version() -> None:
 def print_network_status(created: bool, network_name: str) -> None:
     """Display network creation or reuse status."""
     if created:
-        console.print(f"[ok]Created network {network_name}[/]")
+        console.print(f"Network [accent]{network_name}[/]: [ok]created[/]")
     else:
-        console.print(f"[info]Network {network_name} already exists; reusing[/]")
+        console.print(f"Network [accent]{network_name}[/]: [muted]exists[/]")
 
 
 def print_volume_status(results: list[VolumeEnsureResult]) -> None:
     """Display volume creation or reuse status for multiple volumes."""
     for result in results:
-        label = "bind mount" if result.kind == "bind" else "volume"
+        label = "Bind" if result.kind == "bind" else "Volume"
         if result.created:
-            console.print(f"[ok]Created {label} {result.source} -> {result.target}")
+            console.print(f"{label} [accent]{result.source}[/]: [ok]created[/]")
         else:
-            console.print(
-                f"[info]{label.capitalize()} {result.source} already exists; reusing"
-            )
+            console.print(f"{label} [accent]{result.source}[/]: [muted]exists[/]")

@@ -163,6 +163,18 @@ def run_container(
     gpu_device_flag: Optional[str] = None,
 ) -> bool:
     existed = container_exists(name)
+
+    # If container exists and is running, don't replace it
+    # The secret and other env vars are already baked into the container
+    if existed:
+        try:
+            proc = _run(["container", "inspect", name, "--format", "{{.State.Status}}"])
+            status = proc.stdout.strip()
+            if status == "running":
+                return True  # Container already running, no need to replace
+        except subprocess.CalledProcessError:
+            pass  # Fall through to replace
+
     args: List[str] = [
         "run",
         "--detach",
@@ -174,9 +186,6 @@ def run_container(
         "--restart",
         restart_policy,
     ]
-    if network_aliases:
-        for alias in network_aliases:
-            args.extend(["--network-alias", alias])
     for key, val in env.items():
         args.extend(["-e", f"{key}={val}"])
     for volume_name, dest in volumes:

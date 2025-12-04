@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import tomlkit
 import typer
 from rich.live import Live
 from rich.spinner import Spinner
 from rich.table import Table
 
 from airpods import state, ui
+from airpods.configuration import locate_config_file
+from airpods.configuration.defaults import DEFAULT_CONFIG_DICT
 from airpods.logging import console, status_spinner
 
 from ..common import COMMAND_CONTEXT, manager, print_network_status, print_volume_status
@@ -23,6 +26,28 @@ def register(app: typer.Typer) -> CommandMap:
     ) -> None:
         """Verify tools, ensure resources, and report whether anything new was created."""
         maybe_show_command_help(ctx, help_)
+
+        # Create default config file if user doesn't have one in their home directory
+        from airpods.state import configs_dir
+        from airpods.paths import detect_repo_root
+
+        user_config_path = configs_dir() / "config.toml"
+        repo_root = detect_repo_root()
+
+        # Only create user config if it doesn't exist and we're not using a user-set config
+        if not user_config_path.exists():
+            current_config = locate_config_file()
+            # Create if no config exists, or if only repo config exists
+            should_create = current_config is None or (
+                repo_root and current_config.is_relative_to(repo_root)
+            )
+            if should_create:
+                user_config_path.parent.mkdir(parents=True, exist_ok=True)
+                document = tomlkit.document()
+                document.update(DEFAULT_CONFIG_DICT)
+                user_config_path.write_text(tomlkit.dumps(document), encoding="utf-8")
+                console.print(f"[ok]Created default config at {user_config_path}[/]")
+
         report = manager.report_environment()
         ui.show_environment(report)
 
@@ -46,8 +71,8 @@ def register(app: typer.Typer) -> CommandMap:
 
         def _make_table() -> Table:
             """Create the live-updating image pull table."""
-            table = Table(
-                title="[info]Pulling Images", show_header=True, header_style="bold"
+            table = ui.themed_table(
+                title="[info]Pulling Images",
             )
             table.add_column("Service", style="cyan")
             table.add_column("Image", style="dim")

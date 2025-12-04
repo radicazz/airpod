@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.client
 import socket
 import time
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from airpods import ui
@@ -18,6 +19,40 @@ from airpods.logging import console
 from airpods.services import ServiceSpec
 
 from .common import DEFAULT_PING_TIMEOUT, manager
+
+
+def _format_uptime(started_at: str) -> str:
+    """Format container uptime from start time string.
+
+    Args:
+        started_at: Container start time string from podman inspect
+
+    Returns:
+        Formatted uptime string (e.g., "5m", "2h", "3d")
+    """
+    try:
+        # Parse the timestamp (podman format: "2025-12-04 06:03:42.530956537 -0500 EST")
+        # Split and take the date/time part, ignore timezone for now
+        parts = started_at.split()
+        if len(parts) >= 2:
+            dt_str = f"{parts[0]} {parts[1].split('.')[0]}"
+            started = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+            # Assume local time for simplicity
+            now = datetime.now()
+            delta = now - started
+
+            total_seconds = int(delta.total_seconds())
+            if total_seconds < 60:
+                return f"{total_seconds}s"
+            elif total_seconds < 3600:
+                return f"{total_seconds // 60}m"
+            elif total_seconds < 86400:
+                return f"{total_seconds // 3600}h"
+            else:
+                return f"{total_seconds // 86400}d"
+    except (ValueError, IndexError):
+        pass
+    return "-"
 
 
 def render_status(specs: List[ServiceSpec]) -> None:
@@ -36,15 +71,39 @@ def render_status(specs: List[ServiceSpec]) -> None:
     table = ui.themed_table(title="[accent]Pods[/accent]")
     table.add_column("Service")
     table.add_column("Status")
+    table.add_column("Uptime", justify="right")
     table.add_column("Info", no_wrap=False)
 
     for spec in specs:
         row = pod_rows.get(spec.pod) if pod_rows else None
         if not row:
-            table.add_row(spec.name, "[warn]absent", "-")
+            table.add_row(spec.name, "[warn]absent", "-", "-")
             continue
 
         status = row.get("Status", "?")
+
+        # Get uptime from container inspect
+        uptime = "-"
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                [
+                    "podman",
+                    "container",
+                    "inspect",
+                    spec.container,
+                    "--format",
+                    "{{.State.StartedAt}}",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                uptime = _format_uptime(result.stdout.strip())
+        except Exception:
+            pass
 
         if status == "Running":
             port_bindings = manager.service_ports(spec)
@@ -52,13 +111,13 @@ def render_status(specs: List[ServiceSpec]) -> None:
             host_port = host_ports[0] if host_ports else None
             health = ping_service(spec, host_port)
             url_text = ", ".join(format_host_urls(host_ports)) if host_ports else "-"
-            table.add_row(spec.name, health, url_text)
+            table.add_row(spec.name, health, uptime, url_text)
         elif status == "Exited":
             port_bindings = manager.service_ports(spec)
             ports_display = format_port_bindings(port_bindings)
-            table.add_row(spec.name, f"[warn]{status}", ports_display)
+            table.add_row(spec.name, f"[warn]{status}", uptime, ports_display)
         else:
-            table.add_row(spec.name, f"[warn]{status}", "-")
+            table.add_row(spec.name, f"[warn]{status}", uptime, "-")
 
     console.print(table)
 

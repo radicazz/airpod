@@ -45,6 +45,48 @@ def register(app: typer.Typer) -> CommandMap:
         maybe_show_command_help(ctx, help_)
         specs = resolve_services(service)
         ensure_podman_available()
+
+        # Collect uptimes before stopping
+        uptimes: dict[str, str] = {}
+        total_uptime_seconds = 0
+        for spec in specs:
+            try:
+                import subprocess
+
+                result = subprocess.run(
+                    [
+                        "podman",
+                        "container",
+                        "inspect",
+                        spec.container,
+                        "--format",
+                        "{{.State.StartedAt}}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    from airpods.cli.status_view import _format_uptime
+
+                    started_at = result.stdout.strip()
+                    uptimes[spec.name] = _format_uptime(started_at)
+
+                    # Calculate total seconds for summary
+                    from datetime import datetime
+
+                    parts = started_at.split()
+                    if len(parts) >= 2:
+                        dt_str = f"{parts[0]} {parts[1].split('.')[0]}"
+                        # Skip invalid/epoch timestamps
+                        if not dt_str.startswith("0001-"):
+                            started = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+                            now = datetime.now()
+                            delta = now - started
+                            total_uptime_seconds += int(delta.total_seconds())
+            except Exception:
+                uptimes[spec.name] = "-"
+
         if remove and specs:
             lines = "\n".join(f"  - {spec.name} ({spec.pod})" for spec in specs)
             prompt = (
@@ -59,23 +101,25 @@ def register(app: typer.Typer) -> CommandMap:
 
         def _make_table() -> Table:
             """Create the live-updating status table."""
-            table = Table(
-                title="[info]Stopping Services", show_header=True, header_style="bold"
+            table = ui.themed_table(
+                title="[info]Stopping Services",
             )
             table.add_column("Service", style="cyan")
+            table.add_column("Uptime", justify="right")
             table.add_column("Status", style="")
 
             for spec in specs:
                 state = service_states[spec.name]
+                uptime = uptimes.get(spec.name, "-")
                 if state == "stopping":
                     spinner = Spinner("dots", style="info")
-                    table.add_row(spec.name, spinner)
+                    table.add_row(spec.name, uptime, spinner)
                 elif state == "stopped":
-                    table.add_row(spec.name, "[ok]✓ Stopped")
+                    table.add_row(spec.name, uptime, "[ok]✓ Stopped")
                 elif state == "removed":
-                    table.add_row(spec.name, "[ok]✓ Removed")
+                    table.add_row(spec.name, uptime, "[ok]✓ Removed")
                 elif state == "not_found":
-                    table.add_row(spec.name, "[warn]⊘ Not found")
+                    table.add_row(spec.name, uptime, "[warn]⊘ Not found")
 
             return table
 
@@ -89,5 +133,17 @@ def register(app: typer.Typer) -> CommandMap:
                 else:
                     service_states[spec.name] = "stopped"
                 live.update(_make_table())
+
+        # Show total uptime summary
+        if total_uptime_seconds > 0:
+            from airpods.cli.status_view import _format_uptime
+
+            # Create a fake timestamp for formatting
+            from datetime import datetime
+
+            fake_start = datetime.now().timestamp() - total_uptime_seconds
+            fake_str = datetime.fromtimestamp(fake_start).strftime("%Y-%m-%d %H:%M:%S")
+            total_display = _format_uptime(fake_str + " -0500 EST")
+            console.print(f"\nTotal uptime: [accent]{total_display}[/]")
 
     return {"stop": stop}

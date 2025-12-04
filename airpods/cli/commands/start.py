@@ -13,7 +13,6 @@ from rich.table import Table
 from airpods import ui
 from airpods.logging import console, status_spinner
 from airpods.system import detect_gpu
-from airpods.services import ServiceStartResult
 
 from ..common import (
     COMMAND_CONTEXT,
@@ -31,22 +30,6 @@ from ..status_view import check_service_health, collect_host_ports
 from ..type_defs import CommandMap
 
 
-def _log_service_start_status(result: ServiceStartResult) -> None:
-    """Emit human-friendly status for pod/container reuse."""
-
-    if result.pod_created:
-        console.print(f"[ok]Created pod {result.spec.pod}")
-    else:
-        console.print(f"[info]Pod {result.spec.pod} already exists; reusing")
-
-    if result.container_replaced:
-        console.print(
-            f"[info]Replaced existing container {result.spec.container} in pod {result.spec.pod}"
-        )
-    else:
-        console.print(f"[ok]Started container {result.spec.container}")
-
-
 def register(app: typer.Typer) -> CommandMap:
     @app.command(context_settings=COMMAND_CONTEXT)
     def start(
@@ -60,47 +43,100 @@ def register(app: typer.Typer) -> CommandMap:
         force_cpu: bool = typer.Option(
             False, "--cpu", help="Force CPU even if GPU is present."
         ),
-        force: bool = typer.Option(
-            False,
-            "--force",
-            "-f",
-            help="Skip confirmation prompt before replacing existing containers.",
-        ),
     ) -> None:
-        """Start pods for specified services; prompts before replacing running containers."""
+        """Start pods for specified services."""
         maybe_show_command_help(ctx, help_)
+
+        # Ensure user config exists
+        from airpods.configuration import locate_config_file
+        from airpods.state import configs_dir
+        from airpods.configuration.defaults import DEFAULT_CONFIG_DICT
+        import tomlkit
+        from airpods.paths import detect_repo_root
+
+        user_config_path = configs_dir() / "config.toml"
+        repo_root = detect_repo_root()
+
+        if not user_config_path.exists():
+            current_config = locate_config_file()
+            should_create = current_config is None or (
+                repo_root and current_config.is_relative_to(repo_root)
+            )
+            if should_create:
+                user_config_path.parent.mkdir(parents=True, exist_ok=True)
+                document = tomlkit.document()
+                document.update(DEFAULT_CONFIG_DICT)
+                user_config_path.write_text(tomlkit.dumps(document), encoding="utf-8")
+                console.print(f"[ok]Created default config at {user_config_path}[/]")
+
         specs = resolve_services(service)
         ensure_podman_available()
-        gpu_available, gpu_detail = detect_gpu()
-        console.print(
-            f"[info]GPU: {'enabled' if gpu_available else 'not detected'} ({gpu_detail})[/]"
-        )
 
+        # Check what's already running first
+        pod_rows = manager.pod_status_rows() or {}
+        already_running = []
+        needs_start = []
+
+        for spec in specs:
+            row = pod_rows.get(spec.pod)
+            if row and row.get("Status") == "Running":
+                # Verify the container is actually running
+                if manager.container_exists(spec):
+                    already_running.append(spec)
+                else:
+                    needs_start.append(spec)
+            else:
+                needs_start.append(spec)
+
+        # If everything is already running, just report and exit
+        if not needs_start:
+            console.print("[ok]All services already running[/]")
+            from airpods.cli.status_view import render_status
+
+            render_status(specs)
+            return
+
+        # Report what's already running
+        if already_running:
+            running_names = ", ".join(spec.name for spec in already_running)
+            console.print(f"Already running: [ok]{running_names}[/]")
+
+        # Only process services that need to be started
+        specs_to_start = needs_start
+
+        # Show GPU status
+        gpu_available, gpu_detail = detect_gpu()
+        if gpu_available:
+            console.print(f"GPU: [ok]enabled[/] ({gpu_detail})")
+        else:
+            console.print(f"GPU: [muted]not detected[/] ({gpu_detail})")
+
+        # Only ensure network/volumes if we're actually starting something
         with status_spinner("Ensuring network"):
             network_created = manager.ensure_network()
         print_network_status(network_created, manager.network_name)
 
         with status_spinner("Ensuring volumes"):
-            volume_results = manager.ensure_volumes(specs)
+            volume_results = manager.ensure_volumes(specs_to_start)
         print_volume_status(volume_results)
 
         # Initialize service states for the unified table
-        service_states: dict[str, str] = {spec.name: "pulling" for spec in specs}
-        service_urls: dict[str, str] = {spec.name: "" for spec in specs}
+        service_states: dict[str, str] = {
+            spec.name: "pulling" for spec in specs_to_start
+        }
+        service_urls: dict[str, str] = {spec.name: "" for spec in specs_to_start}
         start_time = time.time()
 
         def _make_unified_table() -> Table:
             """Create the unified startup table showing all phases."""
-            table = Table(
+            table = ui.themed_table(
                 title="[info]Starting Services",
-                show_header=True,
-                header_style="bold",
             )
             table.add_column("Service", style="cyan")
             table.add_column("Image", style="dim")
             table.add_column("Status", style="")
 
-            for spec in specs:
+            for spec in specs_to_start:
                 state_val = service_states[spec.name]
                 url = service_urls[spec.name]
 
@@ -138,32 +174,17 @@ def register(app: typer.Typer) -> CommandMap:
                     service_states[spec.name] = "pulled"
                 live.update(_make_unified_table())
 
-            manager.pull_images(specs, progress_callback=_image_progress)
-
-            # Check for existing containers
-            existing_containers = [
-                spec for spec in specs if manager.container_exists(spec)
-            ]
-            if existing_containers and not force:
-                live.stop()
-                lines = "\n".join(
-                    f"  - {spec.name} ({spec.container})"
-                    for spec in existing_containers
-                )
-                prompt = f"Replace the following running containers before starting?\n{lines}"
-                if not ui.confirm_action(prompt, default=False):
-                    console.print("[warn]Start cancelled by user.[/]")
-                    raise typer.Abort()
-                live.start()
+            manager.pull_images(specs_to_start, progress_callback=_image_progress)
 
             # Start containers
-            for spec in specs:
+            for spec in specs_to_start:
                 service_states[spec.name] = "starting"
                 live.update(_make_unified_table())
                 result = manager.start_service(
                     spec, gpu_available=gpu_available, force_cpu=force_cpu
                 )
-                _log_service_start_status(result)
+                # Don't log status here - it breaks Live rendering
+                # Status is visible in the table already
                 service_states[spec.name] = "started"
                 live.update(_make_unified_table())
 
@@ -181,7 +202,7 @@ def register(app: typer.Typer) -> CommandMap:
 
                 pod_rows = manager.pod_status_rows() or {}
                 all_done = True
-                for spec in specs:
+                for spec in specs_to_start:
                     state = service_states[spec.name]
                     if state in ("healthy", "failed", "timeout"):
                         continue
@@ -227,10 +248,14 @@ def register(app: typer.Typer) -> CommandMap:
                 time.sleep(DEFAULT_STARTUP_CHECK_INTERVAL)
 
         failed = [
-            spec.name for spec in specs if service_states.get(spec.name) == "failed"
+            spec.name
+            for spec in specs_to_start
+            if service_states.get(spec.name) == "failed"
         ]
         timeout_services = [
-            spec.name for spec in specs if service_states.get(spec.name) == "timeout"
+            spec.name
+            for spec in specs_to_start
+            if service_states.get(spec.name) == "timeout"
         ]
 
         if failed:
@@ -244,11 +269,6 @@ def register(app: typer.Typer) -> CommandMap:
             console.print(
                 f"\n[warn]Timed out services: {', '.join(timeout_services)}. "
                 "Services may still be starting. Check with 'airpods status'[/]"
-            )
-
-        if not failed and not timeout_services:
-            ui.success_panel(
-                f"start complete: {', '.join(spec.name for spec in specs)}"
             )
 
     return {"start": start}

@@ -5,8 +5,8 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 
 ## Command Surface
 - Global options: `-v/--version` prints the CLI version; `-h/--help` shows the custom help view plus alias table.
-- `init`: Verify dependencies (podman, podman-compose, uv, optional nvidia-smi), create volumes, pull images, summarize readiness, and report whether each resource was created or already present.
-- `start [service...]`: Ensure volumes/images, then launch pods (default both) while explaining when networks, volumes, pods, or containers are reused vs newly created. Waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds, with health-less services marked ready once their pod is running. Prompts before replacing existing containers unless the user passes `--force`. GPU auto-detected and attached to Ollama; CPU fallback allowed. Exposed aliases: `up`.
+- `init`: Verify dependencies (podman, podman-compose, uv, optional nvidia-smi), create default config file if none exists in user's home directory, create volumes, pull images, summarize readiness, and report whether each resource was created or already present.
+- `start [service...]`: Ensure volumes/images, then launch pods (default both) while explaining when networks, volumes, pods, or containers are reused vs newly created. Waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds, with health-less services marked ready once their pod is running. Skips recreation if containers are already running. GPU auto-detected and attached to Ollama; CPU fallback allowed. Exposed aliases: `up`.
 - `stop [service...]`: Graceful stop; optional removal of pods while preserving volumes by default, with an interactive confirmation prompt before destructive removal. Exposed aliases: `down`.
 - `status [service...]`: Compact Rich table (Service / Status / Info) summarizing HTTP health plus friendly URLs for running pods, or pod status + port summaries for stopped ones; redundant columns (pod name, uptime, counts) were removed for readability. Exposed aliases: `ps`.
 - `logs [service...]`: Tail logs for specified services or all; supports follow/since/lines.
@@ -38,6 +38,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - Config priority: `$AIRPODS_CONFIG` → `$AIRPODS_HOME/configs/config.toml` → `$AIRPODS_HOME/config.toml` (legacy) → `<repo_root>/configs/config.toml` → `<repo_root>/config.toml` (legacy) → `$XDG_CONFIG_HOME/airpods/configs/config.toml` → `$XDG_CONFIG_HOME/airpods/config.toml` (legacy) → `~/.config/airpods/configs/config.toml` → `~/.config/airpods/config.toml` (legacy) → defaults.
 - Supporting modules: `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs from config), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `airpods/paths.py` (repo root detection), `airpods/state.py` (state directory management), `podcli` (uv/python wrapper script).
 - Pod specs dynamically generated from configuration. Service metadata includes `needs_webui_secret` flag for automatic secret injection. Easy to extend services via config files.
+- Network aliases are configured at the pod level (not container level) since containers in pods share the pod's network namespace.
 - Errors surfaced with clear remediation (install Podman, start podman machine, check GPU drivers).
 
 ## Data & Images
