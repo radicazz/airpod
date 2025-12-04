@@ -178,7 +178,7 @@ def register(app: typer.Typer) -> CommandMap:
                 live.update(_make_unified_table())
 
             manager.pull_images(specs_to_start, progress_callback=_image_progress)
-            
+
             # Get image sizes after all pulls complete
             for spec in specs_to_start:
                 size = manager.runtime.image_size(spec.image)

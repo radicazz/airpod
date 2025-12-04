@@ -44,7 +44,7 @@
 
 ### Current Implementation (v0.5.0+)
 
-- **Image**: `docker.io/yanwk/comfyui-boot:cu128-slim` 
+- **Image**: `docker.io/yanwk/comfyui-boot:cu128-slim`
   - Community-maintained image with CUDA 12.8, Python 3.12
   - Includes ComfyUI + ComfyUI-Manager out of the box
   - Alternative to build your own: future plan is to fork and customize
