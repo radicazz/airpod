@@ -98,7 +98,7 @@ Available variables:
 version = "1.0"
 
 [runtime]
-prefer = "auto"  # auto, podman, docker
+prefer = "auto"  # auto, podman, docker (docker not yet supported)
 host_gateway = "auto"
 network_name = "airpods_network"
 gpu_device_flag = "auto"
@@ -146,3 +146,15 @@ OLLAMA_HOST = "0.0.0.0"
 - The `needs_webui_secret` flag automatically injects the webui secret
 - GPU detection is automatic; override with `gpu.force_cpu = true`
 - All changes are validated before saving
+
+## Runtime Support
+
+**Podman** (`runtime.prefer = "auto"` or `"podman"`):
+- Fully supported and recommended
+- Default container runtime for airpods
+- Supports GPU passthrough and pod management
+
+**Docker** (`runtime.prefer = "docker"`):
+- Not yet supported in this release
+- Setting this value will result in a clear error message: "Docker is not supported yet. Please set runtime.prefer back to 'podman' or 'auto' and try again."
+- Docker support is planned for a future release
