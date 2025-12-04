@@ -33,22 +33,42 @@ def locate_config_file() -> Optional[Path]:
 
     airpods_home = os.environ.get("AIRPODS_HOME")
     if airpods_home:
+        # First try configs subdirectory (preferred location)
+        path = Path(airpods_home).expanduser() / "configs" / "config.toml"
+        if path.exists():
+            return path.resolve()
+        # Fall back to root level for backwards compatibility
         path = Path(airpods_home).expanduser() / "config.toml"
         if path.exists():
             return path.resolve()
 
     repo_root = detect_repo_root()
     if repo_root:
+        # First try configs subdirectory (preferred location)
+        path = repo_root / "configs" / "config.toml"
+        if path.exists():
+            return path
+        # Fall back to root level for backwards compatibility
         path = repo_root / "config.toml"
         if path.exists():
             return path
 
     xdg_home = os.environ.get("XDG_CONFIG_HOME")
     if xdg_home:
+        # First try configs subdirectory (preferred location)
+        path = Path(xdg_home).expanduser() / "airpods" / "configs" / "config.toml"
+        if path.exists():
+            return path
+        # Fall back to root level for backwards compatibility
         path = Path(xdg_home).expanduser() / "airpods" / "config.toml"
         if path.exists():
             return path
 
+    # First try configs subdirectory (preferred location)
+    path = Path.home() / ".config" / "airpods" / "configs" / "config.toml"
+    if path.exists():
+        return path
+    # Fall back to root level for backwards compatibility
     path = Path.home() / ".config" / "airpods" / "config.toml"
     if path.exists():
         return path

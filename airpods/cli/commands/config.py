@@ -309,7 +309,9 @@ def register(app: typer.Typer) -> CommandMap:
 
 
 def _default_config_path() -> Path:
-    return state_root() / "config.toml"
+    from airpods.state import configs_dir
+
+    return configs_dir() / "config.toml"
 
 
 def _generate_default_toml() -> str:

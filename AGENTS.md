@@ -12,7 +12,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 - `logs [service...]`: Tail logs for specified services or all; supports follow/since/lines.
 - `doctor`: Re-run checks without creating resources; surfaces remediation hints without touching pods/volumes.
 - `config`: Manage configuration with subcommands:
-  - `init`: Create default config file at `$AIRPODS_HOME/config.toml`
+  - `init`: Create default config file at `$AIRPODS_HOME/configs/config.toml`
   - `show`: Display current configuration (TOML or JSON format)
   - `path`: Show configuration file location
   - `edit`: Open config in `$EDITOR`
@@ -35,7 +35,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `airpods/configuration/defaults.py` – Built-in default configuration dictionary.
   - `airpods/configuration/loader.py` – Config file discovery, TOML loading, merging, caching.
   - `airpods/configuration/resolver.py` – Template variable resolution (`{{runtime.host_gateway}}`, `{{services.ollama.ports.0.host}}`).
-  - Config priority: `$AIRPODS_CONFIG` → `$AIRPODS_HOME/config.toml` → `<repo_root>/config.toml` → `$XDG_CONFIG_HOME/airpods/config.toml` → `~/.config/airpods/config.toml` → defaults.
+  - Config priority: `$AIRPODS_CONFIG` → `$AIRPODS_HOME/configs/config.toml` → `$AIRPODS_HOME/config.toml` (legacy) → `<repo_root>/configs/config.toml` → `<repo_root>/config.toml` (legacy) → `$XDG_CONFIG_HOME/airpods/configs/config.toml` → `$XDG_CONFIG_HOME/airpods/config.toml` (legacy) → `~/.config/airpods/configs/config.toml` → `~/.config/airpods/config.toml` (legacy) → defaults.
 - Supporting modules: `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs from config), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `airpods/paths.py` (repo root detection), `airpods/state.py` (state directory management), `podcli` (uv/python wrapper script).
 - Pod specs dynamically generated from configuration. Service metadata includes `needs_webui_secret` flag for automatic secret injection. Easy to extend services via config files.
 - Errors surfaced with clear remediation (install Podman, start podman machine, check GPU drivers).
@@ -43,9 +43,9 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 ## Data & Images
 - Volumes: `airpods_ollama_data` for models, `airpods_webui_data` for Open WebUI data, `airpods_comfyui_models` for ComfyUI (when enabled).
 - Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`, `ghcr.io/comfyanonymous/comfyui:latest`; pulled during `init`/`start`.
-- Secrets: Open WebUI secret persisted at `~/.config/airpods/webui_secret` (or `$XDG_CONFIG_HOME/airpods/webui_secret`) during `init`, injected on start via `needs_webui_secret` flag.
+- Secrets: Open WebUI secret persisted at `$AIRPODS_HOME/configs/webui_secret` (or `$XDG_CONFIG_HOME/airpods/configs/webui_secret` or `~/.config/airpods/configs/webui_secret`) during `init`, injected on start via `needs_webui_secret` flag.
 - Networking: Open WebUI targets Ollama via host-published `http://host.containers.internal:11434` (configurable via templates).
-- Configuration: Optional `config.toml` at `$AIRPODS_HOME` or XDG paths; deep-merged with defaults.
+- Configuration: Optional `config.toml` in `configs/` subdirectory at `$AIRPODS_HOME` or XDG paths; deep-merged with defaults. All airpods configuration files (config.toml, webui_secret, etc.) are stored together in the `configs/` subdirectory.
 
 ## Testing Approach
 - Unit tests mock subprocess interactions to validate command flow and flags.

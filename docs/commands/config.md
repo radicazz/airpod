@@ -18,7 +18,7 @@ airpods config edit
 ## Commands
 
 ### `airpods config init`
-Creates a default configuration file at `$AIRPODS_HOME/config.toml` (or `~/.config/airpods/config.toml`).
+Creates a default configuration file at `$AIRPODS_HOME/configs/config.toml` (or `~/.config/airpods/configs/config.toml`).
 
 **Options:**
 - `--force` / `-f`: Overwrite existing file
@@ -69,11 +69,17 @@ airpods config set services.ollama.gpu.enabled false --type bool
 
 Airpods searches for configuration in this order:
 1. `$AIRPODS_CONFIG` (environment variable)
-2. `$AIRPODS_HOME/config.toml`
-3. `<repo_root>/config.toml`
-4. `$XDG_CONFIG_HOME/airpods/config.toml`
-5. `~/.config/airpods/config.toml`
-6. Built-in defaults
+2. `$AIRPODS_HOME/configs/config.toml`
+3. `$AIRPODS_HOME/config.toml` (legacy location)
+4. `<repo_root>/configs/config.toml`
+5. `<repo_root>/config.toml` (legacy location)
+6. `$XDG_CONFIG_HOME/airpods/configs/config.toml`
+7. `$XDG_CONFIG_HOME/airpods/config.toml` (legacy location)
+8. `~/.config/airpods/configs/config.toml`
+9. `~/.config/airpods/config.toml` (legacy location)
+10. Built-in defaults
+
+**Note:** All airpods configuration files (including `config.toml` and `webui_secret`) are now stored in the `configs/` subdirectory for better organization. Legacy locations are still supported for backwards compatibility.
 
 ## Template Variables
 
