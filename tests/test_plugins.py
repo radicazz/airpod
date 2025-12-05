@@ -7,7 +7,7 @@ import pytest
 from airpods import plugins
 
 
-def test_sync_plugins_copies_and_prunes(
+def test_sync_plugins_copies_and_preserves_user_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     source_dir = tmp_path / "plugins" / "open-webui"
@@ -29,7 +29,8 @@ def test_sync_plugins_copies_and_prunes(
     assert synced == 2
     assert (target_dir / "alpha.py").read_text(encoding="utf-8") == "print('alpha')"
     assert (target_dir / "beta.py").exists()
-    assert not (target_dir / "legacy.py").exists()
+    # User files should be preserved
+    assert (target_dir / "legacy.py").exists()
 
 
 def test_import_functions_uses_container(

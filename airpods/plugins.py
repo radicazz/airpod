@@ -68,19 +68,7 @@ def sync_plugins(force: bool = False) -> int:
             shutil.copy2(plugin_file, target_file)
             synced += 1
 
-    removed = 0
-    for target_file in target_dir.glob("*.py"):
-        if target_file.name in desired_names or target_file.name == "__init__.py":
-            continue
-        try:
-            target_file.unlink()
-            removed += 1
-        except FileNotFoundError:
-            continue
-
-    if removed:
-        console.print(f"[info]Removed {removed} stale plugin(s)")
-
+    # Pruning removed to preserve user-added plugins
     return synced
 
 
