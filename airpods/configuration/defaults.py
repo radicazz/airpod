@@ -74,7 +74,8 @@ DEFAULT_CONFIG_DICT = {
             "gpu": {"enabled": False, "force_cpu": False},
             "health": {"path": "/", "expected_status": [200, 399]},
             "env": {
-                "OLLAMA_BASE_URL": "http://ollama:{{services.ollama.ports.0.container}}"
+                "OLLAMA_BASE_URL": "http://ollama:{{services.ollama.ports.0.container}}",
+                "ENABLE_COMMUNITY_SHARING": "True",
             },
             "resources": {},
             "needs_webui_secret": True,

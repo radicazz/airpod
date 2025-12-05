@@ -1,6 +1,6 @@
 # Open WebUI Plugins for AirPods
 
-Auto-installed custom filters for Open WebUI. Synced automatically on `airpods start open-webui`.
+Auto-installed custom functions for Open WebUI. Automatically synced to the filesystem and imported into the database on `airpods start open-webui`.
 
 ## Plugin Categories
 
@@ -8,33 +8,39 @@ Auto-installed custom filters for Open WebUI. Synced automatically on `airpods s
 - **system_prompt_enforcer** - Enforce consistent system prompts
 - **profanity_filter** - Filter inappropriate language
 - **token_counter** - Track and limit token usage
-- **auto_summarizer** - Auto-request summaries in long chats
 - **code_detector** - Detect programming languages in code blocks
-- **timestamp_logger** - Add timestamps for analytics
 
 ### 🚀 Advanced Workflows
 - **vision_joycaption** - Add vision to non-vision models via JoyCaption API
 - **twitter_scraper** - Scrape Twitter/X via Nitter (no API required)
 - **web_researcher** - Auto web search for current information
+- **example_function** - Template for creating custom plugins
 
 ## Auto-Installation
 
-Plugins sync automatically when starting Open WebUI:
+Plugins are automatically synced and imported when starting Open WebUI:
 
-\`\`\`bash
+```bash
 airpods start open-webui
-# Output: ✓ Synced 9 plugin(s)
-\`\`\`
+# Output during startup:
+# ✓ Synced 8 plugin(s)
+# ... (service starts and becomes healthy) ...
+# ✓ Auto-imported 8 plugin(s) into Open WebUI
+```
 
-Files are copied to \`$AIRPODS_HOME/volumes/webui_plugins/\` and mounted into the container.
+The process:
+1. **Filesystem sync**: Plugin files are copied from `plugins/open-webui/` to `$AIRPODS_HOME/volumes/webui_plugins/`
+2. **Container mount**: The `webui_plugins` directory is mounted to `/app/backend/data/functions` in the container
+3. **Database import**: Once Open WebUI is healthy, plugins are automatically imported into the database via the API
+4. **Ready to use**: Plugins appear in the Admin Panel → Functions, ready to enable and configure
 
 ## Usage
 
-1. Start: \`airpods start open-webui\`
+1. Start: `airpods start open-webui`
 2. Open http://localhost:3000
 3. Go to **Admin Panel → Functions**
-4. Enable desired plugins
-5. Configure settings (valves)
+4. Plugins are already imported—just enable and configure them
+5. Adjust settings (valves) as needed
 
 ## Advanced Plugin Examples
 
@@ -102,14 +108,26 @@ Save in \`plugins/open-webui/\`, restart Open WebUI, enable in Admin Panel.
 
 ## Troubleshooting
 
-**Plugins not showing:**
-- Check \`airpods logs open-webui\`
-- Verify in \`$AIRPODS_HOME/volumes/webui_plugins/\`
-- Restart: \`airpods stop open-webui && airpods start open-webui\`
+**Plugins not showing in Functions list:**
+- The auto-import happens after the service becomes healthy
+- Check the startup output for "Auto-imported X plugin(s)" message
+- If import failed, check `airpods logs open-webui` for errors
+- Verify files exist in `$AIRPODS_HOME/volumes/webui_plugins/`
+- Manual fallback: Use the Open WebUI UI to import from the filesystem
+
+**Auto-import errors:**
+- Ensure the WebUI secret is valid (stored in `$AIRPODS_HOME/configs/webui_secret`)
+- Check network connectivity: `curl http://localhost:3000/api/config`
+- The plugins are still available in the container filesystem at `/app/backend/data/functions/` and can be imported manually through the UI
 
 **Vision/scraping not working:**
 - Check external service is running and accessible
 - Verify network connectivity in logs
 - Update valve URLs to match your setup
+
+**To manually re-import plugins:**
+1. Go to Admin Panel → Functions in Open WebUI
+2. Click "Import from Filesystem" or use the "+" button
+3. Select the plugin files from `/app/backend/data/functions/`
 
 See [Open WebUI Functions docs](https://docs.openwebui.com/features/plugin_system/) for more details.
