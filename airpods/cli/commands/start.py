@@ -326,30 +326,25 @@ def register(app: typer.Typer) -> CommandMap:
 
         # Auto-import plugins into Open WebUI if service is healthy
         if webui_specs and service_states.get("open-webui") == "healthy":
-            from airpods import state, webui_api
+            from airpods import webui_db
 
-            webui_url = service_urls.get("open-webui", "")
-            if webui_url:
-                with status_spinner("Auto-importing plugins into Open WebUI"):
-                    try:
-                        webui_secret = state.ensure_webui_secret()
-                        plugins_dir = plugins.get_plugins_source_dir()
-                        imported = webui_api.auto_import_plugins(
-                            webui_url, plugins_dir, webui_secret
-                        )
-                        if imported > 0:
-                            console.print(
-                                f"[ok]✓[/] Auto-imported {imported} plugin(s) into Open WebUI"
-                            )
-                        else:
-                            console.print(
-                                "[info]No new plugins to import (may already exist)[/]"
-                            )
-                    except Exception as e:
+            with status_spinner("Auto-importing plugins into Open WebUI"):
+                try:
+                    plugins_dir = plugins.get_plugins_target_dir()
+                    imported = webui_db.import_functions_via_db(plugins_dir)
+                    if imported > 0:
                         console.print(
-                            f"[warn]Plugin auto-import failed: {e}. "
-                            "Plugins are synced to filesystem and can be imported manually via UI.[/]"
+                            f"[ok]✓[/] Auto-imported {imported} plugin(s) into Open WebUI"
                         )
+                    else:
+                        console.print(
+                            "[info]No new plugins to import (may already exist)[/]"
+                        )
+                except Exception as e:
+                    console.print(
+                        f"[warn]Plugin auto-import failed: {e}. "
+                        "Plugins are synced to filesystem and can be imported manually via UI.[/]"
+                    )
 
     return {"start": start}
 

@@ -13,16 +13,16 @@ from airpods.logging import console
 
 def ensure_admin_user(base_url: str) -> tuple[str, str] | None:
     """Ensure an admin user exists and return credentials.
-    
+
     Args:
         base_url: Base URL of Open WebUI instance
-        
+
     Returns:
         Tuple of (email, password) if successful, None otherwise
     """
     email = "admin@airpods.local"
     password = "airpods-admin-default"
-    
+
     try:
         # Try to sign up
         resp = requests.post(
@@ -30,7 +30,7 @@ def ensure_admin_user(base_url: str) -> tuple[str, str] | None:
             json={"name": "Airpods Admin", "email": email, "password": password},
             timeout=10,
         )
-        
+
         if resp.status_code in (200, 201):
             # User created successfully
             return (email, password)
@@ -45,7 +45,7 @@ def ensure_admin_user(base_url: str) -> tuple[str, str] | None:
         else:
             console.print(f"[warn]Failed to create admin user: {resp.status_code}[/]")
             return None
-            
+
     except Exception as e:
         console.print(f"[error]Error creating admin user: {e}[/]")
         return None
@@ -53,41 +53,45 @@ def ensure_admin_user(base_url: str) -> tuple[str, str] | None:
 
 def promote_user_to_admin(email: str) -> bool:
     """Promote a user to admin role via database update.
-    
+
     Args:
         email: User email to promote
-        
+
     Returns:
         True if successful, False otherwise
     """
     try:
         import subprocess
-        
+
         # Update user role in database
         cmd = [
-            "podman", "exec", "open-webui-0", "python3", "-c",
+            "podman",
+            "exec",
+            "open-webui-0",
+            "python3",
+            "-c",
             f"import sqlite3; "
             f"conn = sqlite3.connect('/app/backend/data/webui.db'); "
             f"cursor = conn.cursor(); "
             f"cursor.execute(\"UPDATE user SET role='admin' WHERE email='{email}'\"); "
             f"conn.commit(); "
             f"print('Updated:', cursor.rowcount); "
-            f"conn.close()"
+            f"conn.close()",
         ]
-        
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=10,
         )
-        
+
         if result.returncode == 0 and "Updated: 1" in result.stdout:
             return True
         else:
             console.print(f"[warn]Failed to promote user: {result.stderr}[/]")
             return False
-            
+
     except Exception as e:
         console.print(f"[warn]Could not promote user to admin: {e}[/]")
         return False
@@ -95,12 +99,12 @@ def promote_user_to_admin(email: str) -> bool:
 
 def get_admin_token(base_url: str, email: str, password: str) -> str | None:
     """Get admin authentication token.
-    
+
     Args:
         base_url: Base URL of Open WebUI instance
         email: Admin user email
         password: Admin user password
-        
+
     Returns:
         Bearer token if successful, None otherwise
     """
@@ -110,14 +114,14 @@ def get_admin_token(base_url: str, email: str, password: str) -> str | None:
             json={"email": email, "password": password},
             timeout=10,
         )
-        
+
         if resp.status_code == 200:
             data = resp.json()
             return data.get("token")
         else:
             console.print(f"[warn]Failed to login: {resp.status_code}[/]")
             return None
-            
+
     except Exception as e:
         console.print(f"[error]Error getting admin token: {e}[/]")
         return None
@@ -125,11 +129,11 @@ def get_admin_token(base_url: str, email: str, password: str) -> str | None:
 
 def wait_for_webui(base_url: str, timeout: int = 60) -> bool:
     """Wait for Open WebUI to be ready.
-    
+
     Args:
         base_url: Base URL of Open WebUI instance
         timeout: Maximum seconds to wait
-        
+
     Returns:
         True if ready, False if timeout
     """
@@ -149,12 +153,12 @@ def import_function_from_file(
     base_url: str, plugin_file: Path, admin_token: str
 ) -> dict[str, Any] | None:
     """Import a function/plugin into Open WebUI via API.
-    
+
     Args:
         base_url: Base URL of Open WebUI instance
         plugin_file: Path to the plugin Python file
         admin_token: Admin user authentication token
-        
+
     Returns:
         API response dict if successful, None otherwise
     """
@@ -163,7 +167,7 @@ def import_function_from_file(
         function_id = plugin_file.stem
 
         headers = {"Authorization": f"Bearer {admin_token}"}
-        
+
         payload = {
             "id": function_id,
             "name": function_id.replace("_", " ").title(),
@@ -181,7 +185,7 @@ def import_function_from_file(
             headers=headers,
             timeout=10,
         )
-        
+
         if resp.status_code in (200, 201):
             return resp.json()
         elif resp.status_code == 409:
@@ -207,12 +211,12 @@ def auto_import_plugins(
     base_url: str, plugins_dir: Path, _webui_secret: str | None = None
 ) -> int:
     """Auto-import all plugins from directory into Open WebUI.
-    
+
     Args:
         base_url: Base URL of Open WebUI instance
         plugins_dir: Directory containing plugin .py files
         _webui_secret: Deprecated, no longer used
-        
+
     Returns:
         Number of plugins successfully imported
     """
@@ -229,12 +233,12 @@ def auto_import_plugins(
     if not credentials:
         console.print("[error]Failed to ensure admin user exists[/]")
         return 0
-    
+
     email, password = credentials
-    
+
     # Promote user to admin if needed (first user gets "pending" role by default)
     promote_user_to_admin(email)
-    
+
     # Get authentication token
     admin_token = get_admin_token(base_url, email, password)
     if not admin_token:
