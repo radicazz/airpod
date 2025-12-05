@@ -6,7 +6,7 @@ User-friendly CLI for orchestrating local AI services with ease.
 
 ## Features
 
-- One-command setup and start: `uv tool install --from . airpods` then `airpods init` / `airpods start`.
+- One-command setup and start: `uv tool install --from . airpods` then `airpods start --init` (prefetch) / `airpods start`.
 - GPU-aware: detect NVIDIA GPUs and attach to pods when available; gracefully fall back to CPU.
 - Advanced networking: custom DNS names, network aliases, subnets, and DNS servers for flexible service discovery.
 - Opinionated but extensible: defaults for ports/volumes/images, easy to extend with future services like ComfyUI.
@@ -38,8 +38,10 @@ uv pip install -e . '.[dev]'
 Use the CLI:
 
 ```bash
+# Prefetch images/volumes without starting (optional)
+airpods start --init
+
 # Create & run the services
-airpods init
 airpods start
 
 # Make sure everything is going well
@@ -50,6 +52,8 @@ airpods stop
 ```
 
 Feel free to run `airpods --help` to see a full list of available commands.
+
+The first run of `airpods start --init` (or `airpods start`) writes a default configuration to `$AIRPODS_HOME/configs/config.toml` (defaults to `~/.config/airpods/configs/config.toml`) and reloads the CLI immediately so any tweaks you make take effect right away. Whatever directory hosts that config becomes the single home for Airpods data: the CLI creates sibling `volumes/`, `configs/`, and secret files there so everything (models, secrets, runtime state) stays grouped together.
 
 ## License
 

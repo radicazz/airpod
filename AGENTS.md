@@ -5,8 +5,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 
 ## Command Surface
 - Global options: `-v/--version` prints the CLI version; `-h/--help` shows the custom help view plus alias table.
-- `init`: Verify dependencies (podman, podman-compose, uv, optional nvidia-smi), create default config file if none exists in user's home directory, create volumes, pull images, summarize readiness, and report whether each resource was created or already present.
-- `start [service...]`: Ensure volumes/images, then launch pods (default both) while explaining when networks, volumes, pods, or containers are reused vs newly created. Waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds, with health-less services marked ready once their pod is running. Skips recreation if containers are already running. GPU auto-detected and attached to Ollama; CPU fallback allowed. Exposed aliases: `up`.
+- `start [service...]`: Ensures volumes/images, then launches pods (default both) while explaining when networks, volumes, pods, or containers are reused vs newly created. Waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds, with health-less services marked ready once their pod is running. Skips recreation if containers are already running. GPU auto-detected and attached to Ollama; CPU fallback allowed. `--init/-i` performs the dependency checks + resource creation/image pull flow without starting containers, replacing the standalone `init` command. Exposed aliases: `up`.
 - `stop [service...]`: Graceful stop; optional removal of pods while preserving volumes by default, with an interactive confirmation prompt before destructive removal. Exposed aliases: `down`.
 - `status [service...]`: Compact Rich table (Service / Status / Info) summarizing HTTP health plus friendly URLs for running pods, or pod status + port summaries for stopped ones; redundant columns (pod name, uptime, counts) were removed for readability. Exposed aliases: `ps`.
 - `logs [service...]`: Tail logs for specified services or all; supports follow/since/lines.
@@ -27,7 +26,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `airpods/cli/common.py` – shared constants, service manager, and Podman/dependency helpers.
   - `airpods/cli/help.py` – Rich-powered help/alias rendering tables used by the root callback.
   - `airpods/cli/status_view.py` – status table + health probing utilities.
-  - `airpods/cli/commands/` – individual command modules (`init`, `doctor`, `start`, `stop`, `status`, `logs`, `version`, `config`) each registering via `commands.__init__.register`.
+  - `airpods/cli/commands/` – individual command modules (`doctor`, `start`, `stop`, `status`, `logs`, `version`, `config`) each registering via `commands.__init__.register`.
   - `airpods/cli/type_defs.py` – shared Typer command mapping type alias.
 - Configuration system:
   - `airpods/configuration/` – Pydantic-based config schema, loader, template resolver, and error types.
@@ -36,16 +35,17 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `airpods/configuration/loader.py` – Config file discovery, TOML loading, merging, caching.
   - `airpods/configuration/resolver.py` – Template variable resolution (`{{runtime.host_gateway}}`, `{{services.ollama.ports.0.host}}`).
   - Config priority: `$AIRPODS_CONFIG` → `$AIRPODS_HOME/configs/config.toml` → `$AIRPODS_HOME/config.toml` (legacy) → `<repo_root>/configs/config.toml` → `<repo_root>/config.toml` (legacy) → `$XDG_CONFIG_HOME/airpods/configs/config.toml` → `$XDG_CONFIG_HOME/airpods/config.toml` (legacy) → `~/.config/airpods/configs/config.toml` → `~/.config/airpods/config.toml` (legacy) → defaults.
+  - Whichever directory provides the active config is treated as `$AIRPODS_HOME`; `configs/`, `volumes/`, and secrets are all created there so runtime assets stay grouped together regardless of which item in the priority list wins.
 - Supporting modules: `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs from config), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `airpods/paths.py` (repo root detection), `airpods/state.py` (state directory management), `podcli` (uv/python wrapper script).
 - Pod specs dynamically generated from configuration. Service metadata includes `needs_webui_secret` flag for automatic secret injection. Easy to extend services via config files.
 - Network aliases are configured at the pod level (not container level) since containers in pods share the pod's network namespace.
 - Errors surfaced with clear remediation (install Podman, start podman machine, check GPU drivers).
 
 ## Data & Images
-- Volumes: `airpods_ollama_data` for models, `airpods_webui_data` for Open WebUI data, `airpods_comfyui_models` for ComfyUI models.
-- Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`, `docker.io/yanwk/comfyui-boot:cu128-slim`; pulled during `init`/`start`.
-- Secrets: Open WebUI secret persisted at `$AIRPODS_HOME/configs/webui_secret` (or `$XDG_CONFIG_HOME/airpods/configs/webui_secret` or `~/.config/airpods/configs/webui_secret`) during `init`, injected on start via `needs_webui_secret` flag.
-- Networking: Open WebUI targets Ollama via host-published `http://host.containers.internal:11434` (configurable via templates).
+- Volumes: `airpods_ollama_data`, `airpods_webui_data`, and `airpods_comfyui_data` are bind-mounted under `$AIRPODS_HOME/volumes/` (e.g., `$AIRPODS_HOME/volumes/airpods_ollama_data`), while the ComfyUI workspace bind (`bind://comfyui/workspace`) lives at `$AIRPODS_HOME/volumes/comfyui/workspace`.
+- Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`, `docker.io/yanwk/comfyui-boot:cu128-slim`; pulled during `start --init`/`start`.
+- Secrets: Open WebUI secret persisted at `$AIRPODS_HOME/configs/webui_secret` (or `$XDG_CONFIG_HOME/airpods/configs/webui_secret` or `~/.config/airpods/configs/webui_secret`) during `start --init`, injected on start via `needs_webui_secret` flag.
+- Networking: Open WebUI targets Ollama via the Podman alias `http://ollama:11434` (configurable via templates).
 - Configuration: Optional `config.toml` in `configs/` subdirectory at `$AIRPODS_HOME` or XDG paths; deep-merged with defaults. All airpods configuration files (config.toml, webui_secret, etc.) are stored together in the `configs/` subdirectory.
 
 ## Testing Approach

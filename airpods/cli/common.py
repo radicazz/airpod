@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 import typer
 
 from airpods import __version__
-from airpods.config import REGISTRY
-from airpods.configuration import get_config
+import airpods.config as config_module
+from airpods.configuration import get_config, reload_config
 from airpods.logging import console
 from airpods.runtime import ContainerRuntimeError, get_runtime
 from airpods.services import (
@@ -19,14 +20,51 @@ from airpods.services import (
 HELP_OPTION_NAMES = ("-h", "--help")
 COMMAND_CONTEXT = {"help_option_names": []}
 
-_CONFIG = get_config()
-_RUNTIME = get_runtime(_CONFIG.runtime.prefer)
+_MANAGER: ServiceManager | None = None
 
-DEFAULT_STOP_TIMEOUT = _CONFIG.cli.stop_timeout
-DEFAULT_LOG_LINES = _CONFIG.cli.log_lines
-DEFAULT_PING_TIMEOUT = _CONFIG.cli.ping_timeout
-DEFAULT_STARTUP_TIMEOUT = _CONFIG.cli.startup_timeout
-DEFAULT_STARTUP_CHECK_INTERVAL = _CONFIG.cli.startup_check_interval
+
+class _ManagerProxy:
+    def __getattr__(self, name: str):
+        if _MANAGER is None:  # pragma: no cover - defensive guard
+            raise AttributeError("manager is not initialized yet")
+        return getattr(_MANAGER, name)
+
+
+manager = _ManagerProxy()
+
+
+def _apply_cli_config(config) -> None:
+    global _CONFIG, _RUNTIME, DEFAULT_STOP_TIMEOUT, DEFAULT_LOG_LINES
+    global DEFAULT_PING_TIMEOUT, DEFAULT_STARTUP_TIMEOUT
+    global DEFAULT_STARTUP_CHECK_INTERVAL, _MANAGER
+
+    _CONFIG = config
+    _RUNTIME = get_runtime(_CONFIG.runtime.prefer)
+
+    DEFAULT_STOP_TIMEOUT = _CONFIG.cli.stop_timeout
+    DEFAULT_LOG_LINES = _CONFIG.cli.log_lines
+    DEFAULT_PING_TIMEOUT = _CONFIG.cli.ping_timeout
+    DEFAULT_STARTUP_TIMEOUT = _CONFIG.cli.startup_timeout
+    DEFAULT_STARTUP_CHECK_INTERVAL = _CONFIG.cli.startup_check_interval
+
+    _MANAGER = ServiceManager(
+        config_module.REGISTRY,
+        _RUNTIME,
+        network_name=_CONFIG.runtime.network_name,
+        network_driver=_CONFIG.runtime.network.driver,
+        network_subnet=_CONFIG.runtime.network.subnet,
+        network_gateway=_CONFIG.runtime.network.gateway,
+        network_dns_servers=_CONFIG.runtime.network.dns_servers,
+        network_ipv6=_CONFIG.runtime.network.ipv6,
+        network_internal=_CONFIG.runtime.network.internal,
+        restart_policy=_CONFIG.runtime.restart_policy,
+        gpu_device_flag=_CONFIG.runtime.gpu_device_flag,
+        required_dependencies=_CONFIG.dependencies.required,
+        optional_dependencies=_CONFIG.dependencies.optional,
+    )
+
+
+_apply_cli_config(get_config())
 
 DOCTOR_REMEDIATIONS = {
     "podman": "Install Podman: https://podman.io/docs/installation",
@@ -42,21 +80,12 @@ COMMAND_ALIASES = {
 
 ALIAS_HELP_TEMPLATE = "[alias]Alias for {canonical}[/]"
 
-manager = ServiceManager(
-    REGISTRY,
-    _RUNTIME,
-    network_name=_CONFIG.runtime.network_name,
-    network_driver=_CONFIG.runtime.network.driver,
-    network_subnet=_CONFIG.runtime.network.subnet,
-    network_gateway=_CONFIG.runtime.network.gateway,
-    network_dns_servers=_CONFIG.runtime.network.dns_servers,
-    network_ipv6=_CONFIG.runtime.network.ipv6,
-    network_internal=_CONFIG.runtime.network.internal,
-    restart_policy=_CONFIG.runtime.restart_policy,
-    gpu_device_flag=_CONFIG.runtime.gpu_device_flag,
-    required_dependencies=_CONFIG.dependencies.required,
-    optional_dependencies=_CONFIG.dependencies.optional,
-)
+
+def refresh_cli_context() -> None:
+    """Reload configuration, service registry, and derived CLI defaults."""
+    config = reload_config()
+    config_module.reload_registry(config)
+    _apply_cli_config(config)
 
 
 def resolve_services(names: Optional[list[str]]) -> list[ServiceSpec]:
@@ -83,16 +112,66 @@ def print_version() -> None:
 def print_network_status(created: bool, network_name: str) -> None:
     """Display network creation or reuse status."""
     if created:
-        console.print(f"Network [accent]{network_name}[/]: [ok]created[/]")
+        console.print(f"Network [accent]{network_name}[/]: [ok]✓ created[/]")
     else:
-        console.print(f"Network [accent]{network_name}[/]: [muted]exists[/]")
+        console.print(f"Network [accent]{network_name}[/]: [ok]✓ exists[/]")
 
 
 def print_volume_status(results: list[VolumeEnsureResult]) -> None:
     """Display volume creation or reuse status for multiple volumes."""
-    for result in results:
+    ordered = [r for r in results if r.kind == "volume"] + [
+        r for r in results if r.kind == "bind"
+    ]
+    for result in ordered:
         label = "Bind" if result.kind == "bind" else "Volume"
         if result.created:
-            console.print(f"{label} [accent]{result.source}[/]: [ok]created[/]")
+            console.print(f"{label} [accent]{result.source}[/]: [ok]✓ created[/]")
         else:
-            console.print(f"{label} [accent]{result.source}[/]: [muted]exists[/]")
+            console.print(f"{label} [accent]{result.source}[/]: [ok]✓ exists[/]")
+
+
+_SIZE_PATTERN = re.compile(
+    r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTP]?B)\s*$", re.IGNORECASE
+)
+_SIZE_MULTIPLIERS = {
+    "B": 1,
+    "KB": 1024,
+    "MB": 1024**2,
+    "GB": 1024**3,
+    "TB": 1024**4,
+}
+
+
+def _size_label_to_bytes(size_label: Optional[str]) -> Optional[float]:
+    if not size_label:
+        return None
+    match = _SIZE_PATTERN.match(size_label.strip())
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2).upper()
+    multiplier = _SIZE_MULTIPLIERS.get(unit)
+    if multiplier is None:
+        return None
+    return value * multiplier
+
+
+def format_transfer_label(
+    size_label: Optional[str], elapsed_seconds: Optional[float]
+) -> str:
+    """Return a friendly "size @ speed" label for transfer metrics."""
+    if not size_label:
+        if elapsed_seconds and elapsed_seconds > 0:
+            return f"{elapsed_seconds:.1f}s"
+        return ""
+
+    if not elapsed_seconds or elapsed_seconds <= 0:
+        return size_label
+
+    size_bytes = _size_label_to_bytes(size_label)
+    if not size_bytes:
+        return f"{size_label} ({elapsed_seconds:.1f}s)"
+
+    megabytes = size_bytes / (1024**2)
+    speed = megabytes / elapsed_seconds
+    return f"{size_label} @ {speed:.1f} MB/s ({elapsed_seconds:.1f}s)"

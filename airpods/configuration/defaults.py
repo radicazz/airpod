@@ -41,7 +41,7 @@ DEFAULT_CONFIG_DICT = {
             "ports": [{"host": 11434, "container": 11434}],
             "volumes": {
                 "data": {
-                    "source": "airpods_ollama_data",
+                    "source": "bind://airpods_ollama_data",
                     "target": "/root/.ollama",
                 }
             },
@@ -63,14 +63,14 @@ DEFAULT_CONFIG_DICT = {
             "ports": [{"host": 3000, "container": 8080}],
             "volumes": {
                 "data": {
-                    "source": "airpods_webui_data",
+                    "source": "bind://airpods_webui_data",
                     "target": "/app/backend/data",
                 }
             },
             "gpu": {"enabled": False, "force_cpu": False},
             "health": {"path": "/", "expected_status": [200, 399]},
             "env": {
-                "OLLAMA_BASE_URL": "http://{{runtime.host_gateway}}:{{services.ollama.ports.0.host}}"
+                "OLLAMA_BASE_URL": "http://ollama:{{services.ollama.ports.0.container}}"
             },
             "resources": {},
             "needs_webui_secret": True,
@@ -83,10 +83,14 @@ DEFAULT_CONFIG_DICT = {
             "network_aliases": ["comfyui"],
             "ports": [{"host": 8188, "container": 8188}],
             "volumes": {
+                "workspace": {
+                    "source": "bind://comfyui/workspace",
+                    "target": "/workspace",
+                },
                 "models": {
-                    "source": "airpods_comfyui_models",
+                    "source": "bind://airpods_comfyui_data",
                     "target": "/root/ComfyUI/models",
-                }
+                },
             },
             "gpu": {"enabled": True, "force_cpu": False},
             "health": {"path": "/", "expected_status": [200, 299]},

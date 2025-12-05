@@ -13,12 +13,26 @@ try:
 except ImportError:  # pragma: no cover
     import tomli as tomllib
 
+from airpods import state
 from airpods.paths import detect_repo_root
 
 from .defaults import DEFAULT_CONFIG_DICT
 from .errors import ConfigurationError
 from .resolver import resolve_templates
 from .schema import AirpodsConfig
+
+
+def _config_home(path: Path) -> Path:
+    parent = path.parent
+    if parent.name == "configs":
+        return parent.parent
+    return parent
+
+
+def _resolve_and_register(path: Path) -> Path:
+    resolved = path.expanduser().resolve()
+    state.set_state_root(_config_home(resolved))
+    return resolved
 
 
 @lru_cache(maxsize=1)
@@ -29,49 +43,37 @@ def locate_config_file() -> Optional[Path]:
         path = Path(env_override).expanduser()
         if not path.exists():
             raise ConfigurationError(f"AIRPODS_CONFIG points to missing file: {path}")
-        return path.resolve()
+        return _resolve_and_register(path)
 
-    airpods_home = os.environ.get("AIRPODS_HOME")
-    if airpods_home:
-        # First try configs subdirectory (preferred location)
-        path = Path(airpods_home).expanduser() / "configs" / "config.toml"
-        if path.exists():
-            return path.resolve()
-        # Fall back to root level for backwards compatibility
-        path = Path(airpods_home).expanduser() / "config.toml"
-        if path.exists():
-            return path.resolve()
+    airpods_home_env = os.environ.get("AIRPODS_HOME")
+    if airpods_home_env:
+        base = Path(airpods_home_env).expanduser()
+        state.set_state_root(base)
+        for candidate in (base / "configs" / "config.toml", base / "config.toml"):
+            if candidate.exists():
+                return _resolve_and_register(candidate)
+        return None
 
     repo_root = detect_repo_root()
     if repo_root:
-        # First try configs subdirectory (preferred location)
-        path = repo_root / "configs" / "config.toml"
-        if path.exists():
-            return path
-        # Fall back to root level for backwards compatibility
-        path = repo_root / "config.toml"
-        if path.exists():
-            return path
+        for candidate in (
+            repo_root / "configs" / "config.toml",
+            repo_root / "config.toml",
+        ):
+            if candidate.exists():
+                return _resolve_and_register(candidate)
 
     xdg_home = os.environ.get("XDG_CONFIG_HOME")
     if xdg_home:
-        # First try configs subdirectory (preferred location)
-        path = Path(xdg_home).expanduser() / "airpods" / "configs" / "config.toml"
-        if path.exists():
-            return path
-        # Fall back to root level for backwards compatibility
-        path = Path(xdg_home).expanduser() / "airpods" / "config.toml"
-        if path.exists():
-            return path
+        base = Path(xdg_home).expanduser() / "airpods"
+        for candidate in (base / "configs" / "config.toml", base / "config.toml"):
+            if candidate.exists():
+                return _resolve_and_register(candidate)
 
-    # First try configs subdirectory (preferred location)
-    path = Path.home() / ".config" / "airpods" / "configs" / "config.toml"
-    if path.exists():
-        return path
-    # Fall back to root level for backwards compatibility
-    path = Path.home() / ".config" / "airpods" / "config.toml"
-    if path.exists():
-        return path
+    home_base = Path.home() / ".config" / "airpods"
+    for candidate in (home_base / "configs" / "config.toml", home_base / "config.toml"):
+        if candidate.exists():
+            return _resolve_and_register(candidate)
 
     return None
 

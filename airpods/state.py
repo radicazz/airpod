@@ -9,6 +9,7 @@ from typing import Optional, Union
 from airpods.paths import detect_repo_root
 
 STATE_ROOT_ENV = "AIRPODS_HOME"
+_STATE_ROOT_OVERRIDE: Optional[Path] = None
 
 
 def _detect_repo_root() -> Optional[Path]:
@@ -18,6 +19,8 @@ def _detect_repo_root() -> Optional[Path]:
 
 @lru_cache(maxsize=1)
 def state_root() -> Path:
+    if _STATE_ROOT_OVERRIDE is not None:
+        return _STATE_ROOT_OVERRIDE
     env = os.environ.get(STATE_ROOT_ENV)
     if env:
         return Path(env).expanduser().resolve()
@@ -28,6 +31,22 @@ def state_root() -> Path:
     if xdg_base:
         return Path(xdg_base).expanduser() / "airpods"
     return Path.home() / ".config" / "airpods"
+
+
+def set_state_root(path: Union[str, os.PathLike[str]]) -> None:
+    """Force the state root (configs/volumes/etc.) to live under ``path``."""
+
+    global _STATE_ROOT_OVERRIDE
+    _STATE_ROOT_OVERRIDE = Path(path).expanduser().resolve()
+    state_root.cache_clear()
+
+
+def clear_state_root_override() -> None:
+    """Reset any previously forced state root path."""
+
+    global _STATE_ROOT_OVERRIDE
+    _STATE_ROOT_OVERRIDE = None
+    state_root.cache_clear()
 
 
 def configs_dir() -> Path:
@@ -42,6 +61,27 @@ def config_dir() -> Path:
 
 def ensure_config_dir() -> Path:
     return configs_dir()
+
+
+def volumes_dir() -> Path:
+    path = state_root() / "volumes"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def resolve_volume_path(relative: Union[str, os.PathLike[str]]) -> Path:
+    path = Path(relative)
+    if not str(path).strip():
+        raise ValueError("volume path cannot be empty")
+    if path.is_absolute():
+        return path
+    base = volumes_dir().resolve()
+    resolved = (base / path).resolve()
+    try:
+        resolved.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("volume path must stay within the volumes directory") from exc
+    return resolved
 
 
 def _normalize_source(path: Union[str, os.PathLike[str]]) -> Path:

@@ -4,7 +4,7 @@ import pytest
 from typer.testing import CliRunner
 
 from airpods import state
-from airpods.configuration import reload_config
+from airpods.cli.common import refresh_cli_context
 from airpods.configuration.loader import locate_config_file
 
 
@@ -14,9 +14,9 @@ def isolate_config(tmp_path, monkeypatch):
 
     home = tmp_path / "airpods-home"
     monkeypatch.setenv("AIRPODS_HOME", str(home))
-    state.state_root.cache_clear()
+    state.clear_state_root_override()
     locate_config_file.cache_clear()
-    reload_config()
+    refresh_cli_context()
     yield
 
 

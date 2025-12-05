@@ -81,19 +81,23 @@ Airpods searches for configuration in this order:
 
 **Note:** All airpods configuration files (including `config.toml` and `webui_secret`) are now stored in the `configs/` subdirectory for better organization. Legacy locations are still supported for backwards compatibility.
 
+> [!TIP]
+> `airpods start --init` (and regular `airpods start`) automatically bootstraps the default `config.toml` at the first writable path in the list above and reloads the CLI so the new file is in effect immediately. Whichever directory hosts that config becomes the Airpods “home”: the CLI stores `configs/`, `volumes/`, webui secrets, and other runtime data alongside each other under that directory so everything stays grouped together.
+
 ## Template Variables
 
 Configuration values support template expansion:
 
 ```toml
 [services.open-webui.env]
-OLLAMA_BASE_URL = "http://{{runtime.host_gateway}}:{{services.ollama.ports.0.host}}"
+OLLAMA_BASE_URL = "http://ollama:{{services.ollama.ports.0.container}}"
 ```
 
 Available variables:
 - `runtime.host_gateway`: Host gateway address
 - `runtime.network_name`: Network name
 - `services.<name>.ports.0.host`: Service host port
+- `services.<name>.ports.0.container`: Service container port
 - `services.<name>.image`: Service image
 - `services.<name>.pod`: Service pod name
 
@@ -164,7 +168,7 @@ Services can use network aliases for cleaner inter-service communication:
 network_aliases = ["ollama"]
 
 [services.open-webui.env]
-OLLAMA_BASE_URL = "http://ollama:11434"  # clean vs {{runtime.host_gateway}}:{{...}}
+OLLAMA_BASE_URL = "http://ollama:11434"  # prefer aliases; host gateway only for host-bound clients
 ```
 
 **Network options** (`runtime.network`):

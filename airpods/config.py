@@ -1,21 +1,50 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from airpods import state
 from airpods.configuration import get_config
-from airpods.configuration.schema import ServiceConfig
+from airpods.configuration.errors import ConfigurationError
+from airpods.configuration.schema import AirpodsConfig, ServiceConfig
 from airpods.services import ServiceRegistry, ServiceSpec, VolumeMount
+
+
+_BIND_VOLUME_PREFIX = "bind://"
 
 
 def _webui_secret_env() -> Dict[str, str]:
     return {"WEBUI_SECRET_KEY": state.ensure_webui_secret()}
 
 
+def _resolve_volume_source(source: str) -> str:
+    if not source:
+        raise ConfigurationError("volume source cannot be empty")
+    if source.startswith(_BIND_VOLUME_PREFIX):
+        relative = source[len(_BIND_VOLUME_PREFIX) :].strip()
+        if not relative:
+            raise ConfigurationError(
+                "bind:// volume sources must include a relative path (e.g. bind://comfyui/workspace)"
+            )
+        try:
+            return str(state.resolve_volume_path(relative))
+        except ValueError as exc:  # pragma: no cover - defensive guard
+            raise ConfigurationError(str(exc)) from exc
+    return source
+
+
 def _service_spec_from_config(name: str, service: ServiceConfig) -> ServiceSpec:
     volumes = [
-        VolumeMount(mount.source, mount.target) for mount in service.volumes.values()
+        VolumeMount(_resolve_volume_source(mount.source), mount.target)
+        for mount in service.volumes.values()
     ]
+    if name == "comfyui" and not any(
+        mount.target == "/workspace" for mount in service.volumes.values()
+    ):
+        volumes.append(
+            VolumeMount(
+                _resolve_volume_source("bind://comfyui/workspace"), "/workspace"
+            )
+        )
     ports = [(port.host, port.container) for port in service.ports]
     env_factory = _webui_secret_env if service.needs_webui_secret else None
     return ServiceSpec(
@@ -33,8 +62,8 @@ def _service_spec_from_config(name: str, service: ServiceConfig) -> ServiceSpec:
     )
 
 
-def _load_service_specs() -> List[ServiceSpec]:
-    config = get_config()
+def _load_service_specs(config: Optional[AirpodsConfig] = None) -> List[ServiceSpec]:
+    config = config or get_config()
     specs: List[ServiceSpec] = []
     for name, service in config.services.items():
         if not service.enabled:
@@ -44,3 +73,10 @@ def _load_service_specs() -> List[ServiceSpec]:
 
 
 REGISTRY = ServiceRegistry(_load_service_specs())
+
+
+def reload_registry(config: Optional[AirpodsConfig] = None) -> ServiceRegistry:
+    """Rebuild the service registry from the latest configuration."""
+    global REGISTRY
+    REGISTRY = ServiceRegistry(_load_service_specs(config))
+    return REGISTRY

@@ -10,18 +10,21 @@ from rich.live import Live
 from rich.spinner import Spinner
 from rich.table import Table
 
-from airpods import ui
+from airpods import state, ui
 from airpods.logging import console, status_spinner
 from airpods.system import detect_gpu
+from airpods.services import ServiceSpec
 
 from ..common import (
     COMMAND_CONTEXT,
     DEFAULT_STARTUP_TIMEOUT,
     DEFAULT_STARTUP_CHECK_INTERVAL,
     ensure_podman_available,
+    format_transfer_label,
     manager,
     print_network_status,
     print_volume_status,
+    refresh_cli_context,
     resolve_services,
 )
 from ..completions import service_name_completion
@@ -43,6 +46,12 @@ def register(app: typer.Typer) -> CommandMap:
         force_cpu: bool = typer.Option(
             False, "--cpu", help="Force CPU even if GPU is present."
         ),
+        init_only: bool = typer.Option(
+            False,
+            "--init",
+            "-i",
+            help="Only run dependency checks, resource creation, and image pulls without starting services.",
+        ),
     ) -> None:
         """Start pods for specified services."""
         maybe_show_command_help(ctx, help_)
@@ -57,20 +66,39 @@ def register(app: typer.Typer) -> CommandMap:
         user_config_path = configs_dir() / "config.toml"
         repo_root = detect_repo_root()
 
+        config_path = locate_config_file()
         if not user_config_path.exists():
-            current_config = locate_config_file()
-            should_create = current_config is None or (
-                repo_root and current_config.is_relative_to(repo_root)
-            )
+            should_create = config_path is None
+            if not should_create and repo_root and config_path:
+                should_create = config_path.is_relative_to(repo_root)
             if should_create:
                 user_config_path.parent.mkdir(parents=True, exist_ok=True)
                 document = tomlkit.document()
                 document.update(DEFAULT_CONFIG_DICT)
                 user_config_path.write_text(tomlkit.dumps(document), encoding="utf-8")
                 console.print(f"[ok]Created default config at {user_config_path}[/]")
+                refresh_cli_context()
+                config_path = user_config_path
+
+        if config_path is None:
+            config_path = locate_config_file()
+        if config_path:
+            console.print(f"[info]Config file: {config_path}")
+        else:
+            console.print("[warn]No config file found; using built-in defaults.[/]")
 
         specs = resolve_services(service)
         ensure_podman_available()
+
+        if init_only:
+            _run_init_mode(specs)
+            return
+
+        if not specs:
+            console.print(
+                "[warn]No services are enabled for this configuration; nothing to start.[/]"
+            )
+            return
 
         # Check what's already running first
         pod_rows = manager.pod_status_rows() or {}
@@ -125,7 +153,8 @@ def register(app: typer.Typer) -> CommandMap:
             spec.name: "pulling" for spec in specs_to_start
         }
         service_urls: dict[str, str] = {spec.name: "" for spec in specs_to_start}
-        image_sizes: dict[str, str] = {}
+        service_transfers: dict[str, str] = {}
+        pull_start_times: dict[str, float] = {}
         start_time = time.time()
 
         def _make_unified_table() -> Table:
@@ -135,34 +164,34 @@ def register(app: typer.Typer) -> CommandMap:
             )
             table.add_column("Service", style="cyan")
             table.add_column("Image", style="dim")
-            table.add_column("Size", style="dim", justify="right")
+            table.add_column("Transfer", style="dim", justify="right")
             table.add_column("Status", style="")
 
             for spec in specs_to_start:
                 state_val = service_states[spec.name]
                 url = service_urls[spec.name]
-                size = image_sizes.get(spec.name, "")
+                transfer = service_transfers.get(spec.name, "")
 
                 if state_val == "pulling":
                     spinner = Spinner("dots", style="info")
-                    table.add_row(spec.name, spec.image, size, spinner)
+                    table.add_row(spec.name, spec.image, transfer, spinner)
                 elif state_val == "pulled":
-                    table.add_row(spec.name, spec.image, size, "[ok]✓ Ready")
+                    table.add_row(spec.name, spec.image, transfer, "[ok]✓ Ready")
                 elif state_val == "starting":
                     spinner = Spinner("dots", style="info")
-                    table.add_row(spec.name, spec.image, size, spinner)
+                    table.add_row(spec.name, spec.image, transfer, spinner)
                 elif state_val == "started":
                     spinner = Spinner("dots", style="info")
-                    table.add_row(spec.name, spec.image, size, spinner)
+                    table.add_row(spec.name, spec.image, transfer, spinner)
                 elif state_val == "healthy":
                     if url:
-                        table.add_row(spec.name, spec.image, size, f"[ok]✓ {url}")
+                        table.add_row(spec.name, spec.image, transfer, f"[ok]✓ {url}")
                     else:
-                        table.add_row(spec.name, spec.image, size, "[ok]✓ Healthy")
+                        table.add_row(spec.name, spec.image, transfer, "[ok]✓ Healthy")
                 elif state_val == "failed":
-                    table.add_row(spec.name, spec.image, size, "[error]✗ Failed")
+                    table.add_row(spec.name, spec.image, transfer, "[error]✗ Failed")
                 elif state_val == "timeout":
-                    table.add_row(spec.name, spec.image, size, "[warn]⏱ Timeout")
+                    table.add_row(spec.name, spec.image, transfer, "[warn]⏱ Timeout")
 
             elapsed = time.time() - start_time
             table.caption = f"[dim]Elapsed: {int(elapsed)}s"
@@ -173,17 +202,19 @@ def register(app: typer.Typer) -> CommandMap:
             def _image_progress(phase, index, _total_count, spec):
                 if phase == "start":
                     service_states[spec.name] = "pulling"
+                    pull_start_times[spec.name] = time.perf_counter()
+                    service_transfers[spec.name] = "[dim]estimating..."
                 else:
                     service_states[spec.name] = "pulled"
+                    elapsed = time.perf_counter() - pull_start_times.pop(
+                        spec.name, time.perf_counter()
+                    )
+                    size = manager.runtime.image_size(spec.image)
+                    transfer = format_transfer_label(size, elapsed)
+                    service_transfers[spec.name] = transfer or f"{elapsed:.1f}s"
                 live.update(_make_unified_table())
 
             manager.pull_images(specs_to_start, progress_callback=_image_progress)
-
-            # Get image sizes after all pulls complete
-            for spec in specs_to_start:
-                size = manager.runtime.image_size(spec.image)
-                if size:
-                    image_sizes[spec.name] = size
             live.update(_make_unified_table())
 
             # Start containers
@@ -282,3 +313,80 @@ def register(app: typer.Typer) -> CommandMap:
             )
 
     return {"start": start}
+
+
+def _run_init_mode(specs: list[ServiceSpec]) -> None:
+    report = manager.report_environment()
+    ui.show_environment(report)
+
+    if report.missing:
+        console.print(
+            f"[error]The following dependencies are required: {', '.join(report.missing)}. Install them and re-run with --init.[/]"
+        )
+        raise typer.Exit(code=1)
+
+    with status_spinner("Ensuring network"):
+        network_created = manager.ensure_network()
+    print_network_status(network_created, manager.network_name)
+
+    with status_spinner("Ensuring volumes"):
+        volume_results = manager.ensure_volumes(specs)
+    print_volume_status(volume_results)
+
+    _pull_images_only(specs)
+
+    with status_spinner("Preparing Open WebUI secret"):
+        state.ensure_webui_secret()
+    console.print(f"[info]Open WebUI secret stored at {state.webui_secret_path()}[/]")
+
+    ui.success_panel("init complete. pods are ready to start.")
+
+
+def _pull_images_only(specs: list[ServiceSpec]) -> None:
+    if not specs:
+        console.print("[warn]No services enabled; nothing to initialize.[/]")
+        return
+
+    image_states: dict[str, str] = {spec.name: "pending" for spec in specs}
+    image_transfers: dict[str, str] = {}
+    image_start_times: dict[str, float] = {}
+
+    def _make_table() -> Table:
+        table = ui.themed_table(title="[info]Pulling Images")
+        table.add_column("Service", style="cyan")
+        table.add_column("Image", style="dim")
+        table.add_column("Transfer", style="dim", justify="right")
+        table.add_column("Status", style="")
+
+        for spec in specs:
+            state_val = image_states[spec.name]
+            transfer = image_transfers.get(spec.name, "")
+            if state_val == "pending":
+                table.add_row(spec.name, spec.image, transfer, "[dim]Waiting...")
+            elif state_val == "pulling":
+                spinner = Spinner("dots", style="info")
+                table.add_row(spec.name, spec.image, transfer, spinner)
+            elif state_val == "done":
+                table.add_row(spec.name, spec.image, transfer, "[ok]✓ Ready")
+
+        return table
+
+    with Live(_make_table(), refresh_per_second=4, console=console) as live:
+
+        def _image_progress(phase, index, _total_count, spec):
+            if phase == "start":
+                image_states[spec.name] = "pulling"
+                image_start_times[spec.name] = time.perf_counter()
+                image_transfers[spec.name] = "[dim]estimating..."
+            else:
+                image_states[spec.name] = "done"
+                elapsed = time.perf_counter() - image_start_times.pop(
+                    spec.name, time.perf_counter()
+                )
+                size = manager.runtime.image_size(spec.image)
+                transfer = format_transfer_label(size, elapsed)
+                image_transfers[spec.name] = transfer or f"{elapsed:.1f}s"
+            live.update(_make_table())
+
+        manager.pull_images(specs, progress_callback=_image_progress)
+        live.update(_make_table())
