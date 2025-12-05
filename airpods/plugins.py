@@ -7,20 +7,20 @@ from pathlib import Path
 
 from airpods.logging import console
 from airpods.paths import detect_repo_root
+from airpods.state import volumes_dir
 
 
 def get_plugins_source_dir() -> Path:
     """Get the source directory containing bundled plugins."""
-    repo = detect_repo_root()
-    if repo:
-        return repo / "plugins" / "open-webui"
-    return Path(__file__).parent.parent.parent / "plugins" / "open-webui"
+    source_root = detect_repo_root(Path(__file__).resolve())
+    if source_root is None:
+        # When installed as a package, fall back to the site-packages root
+        source_root = Path(__file__).resolve().parent.parent
+    return source_root / "plugins" / "open-webui"
 
 
 def get_plugins_target_dir() -> Path:
     """Get the target directory where plugins should be copied."""
-    from airpods.state import volumes_dir
-
     return volumes_dir() / "webui_plugins"
 
 
@@ -43,12 +43,14 @@ def sync_plugins(force: bool = False) -> int:
     target_dir.mkdir(parents=True, exist_ok=True)
 
     synced = 0
-    plugin_files = list(source_dir.glob("*.py"))
+    plugin_files = [
+        p
+        for p in source_dir.glob("*.py")
+        if p.name != "__init__.py" and not p.name.startswith("_")
+    ]
+    desired_names = {p.name for p in plugin_files}
 
     for plugin_file in plugin_files:
-        if plugin_file.name == "__init__.py":
-            continue
-
         target_file = target_dir / plugin_file.name
 
         should_copy = force or not target_file.exists()
@@ -60,6 +62,19 @@ def sync_plugins(force: bool = False) -> int:
         if should_copy:
             shutil.copy2(plugin_file, target_file)
             synced += 1
+
+    removed = 0
+    for target_file in target_dir.glob("*.py"):
+        if target_file.name in desired_names or target_file.name == "__init__.py":
+            continue
+        try:
+            target_file.unlink()
+            removed += 1
+        except FileNotFoundError:
+            continue
+
+    if removed:
+        console.print(f"[info]Removed {removed} stale plugin(s)")
 
     return synced
 

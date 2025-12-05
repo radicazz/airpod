@@ -10,7 +10,11 @@ from pathlib import Path
 from airpods.logging import console
 
 
-def import_functions_via_db(plugins_dir: Path, admin_user_id: str = "system") -> int:
+def import_functions_via_db(
+    plugins_dir: Path,
+    admin_user_id: str = "system",
+    container_name: str = "open-webui-0",
+) -> int:
     """Import functions directly into the database via SQL.
 
     This bypasses the API entirely and inserts functions directly into
@@ -72,7 +76,7 @@ def import_functions_via_db(plugins_dir: Path, admin_user_id: str = "system") ->
             cmd = [
                 "podman",
                 "exec",
-                "open-webui-0",
+                container_name,
                 "python3",
                 "-c",
                 f"import sqlite3; "

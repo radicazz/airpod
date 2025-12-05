@@ -331,7 +331,10 @@ def register(app: typer.Typer) -> CommandMap:
             with status_spinner("Auto-importing plugins into Open WebUI"):
                 try:
                     plugins_dir = plugins.get_plugins_target_dir()
-                    imported = webui_db.import_functions_via_db(plugins_dir)
+                    container_name = webui_specs[0].container
+                    imported = webui_db.import_functions_via_db(
+                        plugins_dir, container_name=container_name
+                    )
                     if imported > 0:
                         console.print(
                             f"[ok]✓[/] Auto-imported {imported} plugin(s) into Open WebUI"
