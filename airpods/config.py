@@ -65,10 +65,37 @@ def _service_spec_from_config(name: str, service: ServiceConfig) -> ServiceSpec:
 def _load_service_specs(config: Optional[AirpodsConfig] = None) -> List[ServiceSpec]:
     config = config or get_config()
     specs: List[ServiceSpec] = []
+    
+    # Check if gateway is enabled
+    gateway_enabled = False
+    if "gateway" in config.services:
+        gateway_enabled = config.services["gateway"].enabled
+    
     for name, service in config.services.items():
         if not service.enabled:
             continue
-        specs.append(_service_spec_from_config(name, service))
+        
+        spec = _service_spec_from_config(name, service)
+        
+        # If gateway is enabled, remove Open WebUI's host port binding
+        # (make it internal-only on airpods_network)
+        if gateway_enabled and name == "open-webui":
+            spec = ServiceSpec(
+                name=spec.name,
+                pod=spec.pod,
+                container=spec.container,
+                image=spec.image,
+                ports=[],  # No host binding when gateway is active
+                env=spec.env,
+                env_factory=spec.env_factory,
+                volumes=spec.volumes,
+                network_aliases=spec.network_aliases,
+                needs_gpu=spec.needs_gpu,
+                health_path=spec.health_path,
+            )
+        
+        specs.append(spec)
+    
     return specs
 
 
