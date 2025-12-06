@@ -138,3 +138,23 @@ def ensure_webui_admin_password() -> str:
         return password_file.read_text(encoding="utf-8").strip()
     
     return password
+
+
+def gateway_caddyfile_path() -> Path:
+    """Return path to generated Caddyfile for gateway service."""
+    return volumes_dir() / "gateway" / "Caddyfile"
+
+
+def ensure_gateway_caddyfile(content: str) -> Path:
+    """Write Caddyfile content to gateway volume directory.
+    
+    Args:
+        content: Resolved Caddyfile content (templates already substituted)
+    
+    Returns:
+        Path to written Caddyfile
+    """
+    path = gateway_caddyfile_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
