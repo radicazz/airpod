@@ -12,6 +12,9 @@ from airpods.system import detect_cuda_compute_capability
 from airpods.logging import console
 
 
+ENABLE_COMFY_CUDA_LOG = False
+
+
 _BIND_VOLUME_PREFIX = "bind://"
 
 
@@ -71,7 +74,7 @@ def _resolve_cuda_image(
     resolved_image = select_comfyui_image(selected_cuda_version, force_cpu=force_cpu)
 
     # Log the selection for transparency
-    if resolved_image != service.image:
+    if ENABLE_COMFY_CUDA_LOG and resolved_image != service.image:
         console.print(f"[info]ComfyUI CUDA: {selection_source} → {resolved_image}[/]")
 
     return resolved_image

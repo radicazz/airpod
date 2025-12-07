@@ -115,7 +115,11 @@ def render_status(specs: List[ServiceSpec]) -> None:
         elif status == "Exited":
             port_bindings = manager.service_ports(spec)
             ports_display = format_port_bindings(port_bindings)
-            table.add_row(spec.name, f"[warn]{status}", uptime, ports_display)
+            # Check if this service was ever actually started vs just created/exited immediately
+            if uptime == "-" or uptime == "0s":
+                table.add_row(spec.name, "[muted]Never started", uptime, ports_display)
+            else:
+                table.add_row(spec.name, f"[warn]{status}", uptime, ports_display)
         else:
             table.add_row(spec.name, f"[warn]{status}", uptime, "-")
 

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from airpods import state
 from airpods.configuration import loader as loader_module
+import pytest
+from pydantic import ValidationError
+
+from airpods.configuration.schema import CLIConfig
 
 
 def test_locate_prefers_repo_over_xdg(tmp_path, monkeypatch):
@@ -42,3 +46,14 @@ def test_airpods_config_env_sets_state_root(tmp_path, monkeypatch):
 
     assert loader_module.locate_config_file() == config_path.resolve()
     assert state.state_root() == config_home.resolve()
+
+
+def test_cli_config_max_concurrent_bounds():
+    CLIConfig(max_concurrent_pulls=1)
+    CLIConfig(max_concurrent_pulls=10)
+
+    with pytest.raises(ValidationError):
+        CLIConfig(max_concurrent_pulls=0)
+
+    with pytest.raises(ValidationError):
+        CLIConfig(max_concurrent_pulls=11)

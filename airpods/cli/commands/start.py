@@ -27,6 +27,7 @@ from ..common import (
     print_volume_status,
     refresh_cli_context,
     resolve_services,
+    get_cli_config,
 )
 from ..completions import service_name_completion
 from ..help import command_help_option, maybe_show_command_help
@@ -52,6 +53,11 @@ def register(app: typer.Typer) -> CommandMap:
             "--init",
             "-i",
             help="Only run dependency checks, resource creation, and image pulls without starting services.",
+        ),
+        sequential: bool = typer.Option(
+            False,
+            "--sequential",
+            help="Pull images sequentially (overrides cli.max_concurrent_pulls).",
         ),
     ) -> None:
         """Start pods for specified services."""
@@ -91,8 +97,15 @@ def register(app: typer.Typer) -> CommandMap:
         specs = resolve_services(service)
         ensure_podman_available()
 
+        # Enable CUDA logging during startup flows
+        import airpods.config as config_module
+        config_module.ENABLE_COMFY_CUDA_LOG = True
+
+        cli_config = get_cli_config()
+        max_concurrent_pulls = 1 if sequential else cli_config.max_concurrent_pulls
+
         if init_only:
-            _run_init_mode(specs)
+            _run_init_mode(specs, max_concurrent_pulls)
             return
 
         if not specs:
@@ -243,7 +256,11 @@ def register(app: typer.Typer) -> CommandMap:
                     service_transfers[spec.name] = transfer or f"{elapsed:.1f}s"
                 live.update(_make_unified_table())
 
-            manager.pull_images(specs_to_start, progress_callback=_image_progress)
+            manager.pull_images(
+                specs_to_start,
+                progress_callback=_image_progress,
+                max_concurrent=max_concurrent_pulls,
+            )
             live.update(_make_unified_table())
 
             # Start containers
@@ -367,7 +384,7 @@ def register(app: typer.Typer) -> CommandMap:
     return {"start": start}
 
 
-def _run_init_mode(specs: list[ServiceSpec]) -> None:
+def _run_init_mode(specs: list[ServiceSpec], max_concurrent: int) -> None:
     report = manager.report_environment()
     ui.show_environment(report)
 
@@ -385,7 +402,7 @@ def _run_init_mode(specs: list[ServiceSpec]) -> None:
         volume_results = manager.ensure_volumes(specs)
     print_volume_status(volume_results)
 
-    _pull_images_only(specs)
+    _pull_images_only(specs, max_concurrent=max_concurrent)
 
     with status_spinner("Preparing Open WebUI secret"):
         state.ensure_webui_secret()
@@ -394,7 +411,7 @@ def _run_init_mode(specs: list[ServiceSpec]) -> None:
     ui.success_panel("init complete. pods are ready to start.")
 
 
-def _pull_images_only(specs: list[ServiceSpec]) -> None:
+def _pull_images_only(specs: list[ServiceSpec], max_concurrent: int) -> None:
     if not specs:
         console.print("[warn]No services enabled; nothing to initialize.[/]")
         return
@@ -440,5 +457,9 @@ def _pull_images_only(specs: list[ServiceSpec]) -> None:
                 image_transfers[spec.name] = transfer or f"{elapsed:.1f}s"
             live.update(_make_table())
 
-        manager.pull_images(specs, progress_callback=_image_progress)
+        manager.pull_images(
+            specs,
+            progress_callback=_image_progress,
+            max_concurrent=max_concurrent,
+        )
         live.update(_make_table())

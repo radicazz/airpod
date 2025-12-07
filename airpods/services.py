@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
@@ -230,16 +231,36 @@ class ServiceManager:
         specs: Iterable[ServiceSpec],
         *,
         progress_callback: ProgressCallback | None = None,
+        max_concurrent: int = 1,
     ) -> None:
         """Pull container images for the given service specs."""
         spec_list = list(specs)
         total = len(spec_list)
-        for index, spec in enumerate(spec_list, start=1):
+        if total == 0:
+            return
+
+        max_workers = max(1, max_concurrent)
+
+        def _pull_single(index: int, spec: ServiceSpec) -> ServiceSpec:
             if progress_callback:
                 progress_callback("start", index, total, spec)
             self.runtime.pull_image(spec.image)
             if progress_callback:
                 progress_callback("end", index, total, spec)
+            return spec
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_pull_single, index, spec): (index, spec)
+                for index, spec in enumerate(spec_list, start=1)
+            }
+            for future in as_completed(futures):
+                exc = future.exception()
+                if exc:
+                    # Cancel remaining futures and re-raise the exception
+                    for f in futures:
+                        f.cancel()
+                    raise exc
 
     def get_image_sizes(self, specs: Iterable[ServiceSpec]) -> Dict[str, Optional[str]]:
         """Get image sizes for all specs."""

@@ -8,6 +8,7 @@ import typer
 from airpods import __version__
 import airpods.config as config_module
 from airpods.configuration import get_config, reload_config
+from airpods.configuration.schema import CLIConfig
 from airpods.logging import console
 from airpods.runtime import ContainerRuntimeError, get_runtime
 from airpods.services import (
@@ -21,6 +22,11 @@ HELP_OPTION_NAMES = ("-h", "--help")
 COMMAND_CONTEXT = {"help_option_names": []}
 
 _MANAGER: ServiceManager | None = None
+_CONFIG = get_config()
+
+
+def get_cli_config() -> CLIConfig:
+    return _CONFIG.cli
 
 
 class _ManagerProxy:
