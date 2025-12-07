@@ -2,11 +2,22 @@ from __future__ import annotations
 
 import typer
 
-from . import clean, config, doctor, init, logs, start, status, stop, version
+from . import backup, clean, config, doctor, init, logs, start, status, stop, version
 from ..common import ALIAS_HELP_TEMPLATE, COMMAND_ALIASES, COMMAND_CONTEXT
 from ..type_defs import CommandMap
 
-COMMAND_MODULES = [version, init, doctor, start, stop, status, logs, config, clean]
+COMMAND_MODULES = [
+    version,
+    init,
+    doctor,
+    start,
+    stop,
+    status,
+    logs,
+    config,
+    clean,
+    backup,
+]
 
 
 def register(app: typer.Typer) -> None:

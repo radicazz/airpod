@@ -1,0 +1,64 @@
+# docs/commands/backup
+
+The `airpods backup` and `airpods restore` commands let you capture and rehydrate Open WebUI data, configuration, and Ollama metadata without copying massive model files.
+
+## `airpods backup`
+
+Create a compressed archive containing:
+- `configs/` (config.toml, webui_secret, other config files)
+- Open WebUI database (`webui.db`) plus optional SQLite `.dump`
+- Open WebUI plugins stored under `webui_plugins`
+- Ollama model metadata (names, digests, URLs, params, but **not** GGUF blobs)
+- Manifest with version info for airpods, Open WebUI, and Ollama
+
+```bash
+# Default backup path: ./airpods-backup-<timestamp>.tar.gz
+airpods backup
+
+# Save to custom directory/name without SQL dump
+airpods backup --dest ~/backups --filename my-airpods.tgz --no-sql-dump
+```
+
+**Options:**
+- `--dest PATH`: Directory to store the archive (default: `cwd`)
+- `--filename NAME`: Override archive filename
+- `--sql-dump/--no-sql-dump`: Include SQLite `.dump` via running container (default: on)
+
+> [!NOTE]
+> Model binaries (GGUF, diffusion checkpoints, etc.) aren’t copied. Only metadata is captured so you can re-pull the exact models later.
+
+## `airpods restore`
+
+Unpack a backup archive and restore configs, WebUI data, and metadata into fresh volumes.
+
+```bash
+# Restore everything, backing up existing configs/db first
+airpods restore ~/backups/airpods-backup-20250712.tar.gz
+
+# Restore configs only, skipping database and metadata
+airpods restore archive.tgz --skip-db --skip-models
+```
+
+**Arguments & Options:**
+- `<archive>`: Path to `.tar.gz` produced by `airpods backup`
+- `--backup-existing/--no-backup-existing`: Copy current configs/DB before overwrite (default: on)
+- `--skip-configs`: Don’t restore config files
+- `--skip-db`: Don’t restore Open WebUI database (raw copy or SQL dump)
+- `--skip-plugins`: Don’t restore plugin files
+- `--skip-models`: Don’t restore Ollama metadata JSON
+
+### Restore Workflow
+1. Validate archive and extract into a temp directory
+2. Copy configs into `$AIRPODS_HOME/configs` (optionally backing up current files)
+3. Restore WebUI database (`webui.db`) or rebuild from `.dump`
+4. Rehydrate `webui_plugins`
+5. Save Ollama metadata + manifest under `$AIRPODS_HOME/configs/restores/`
+6. Print reminders to re-pull Ollama models and restart services
+
+### Best Practices
+- Run `airpods stop` before backing up to ensure clean SQLite copies
+- Store archives outside of `$AIRPODS_HOME` so they survive `airpods clean --all`
+- After restoring, re-pull Ollama models using the metadata file saved in `configs/restores/`
+- Keep sensitive archives encrypted if they contain user data
+
+With these commands you can safely nuke volumes (`airpods clean --volumes`) and bring them back later without losing Open WebUI users, chats, or plugin state.

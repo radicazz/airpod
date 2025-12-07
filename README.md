@@ -37,8 +37,19 @@ airpods status
 # Stop services
 airpods stop
 
-# Clean up everything
+# Clean up everything (back up data first!)
+airpods backup --dest ~/backups
 airpods clean --all
+```
+
+## Back up / restore state
+
+```bash
+# Capture configs, Open WebUI DB, plugins, and Ollama metadata (no GGUF blobs)
+airpods backup --dest ~/backups
+
+# Restore into fresh volumes, keeping current configs backed up automatically
+airpods restore ~/backups/airpods-backup-20250712.tar.gz
 ```
 
 Run `airpods --help` for all available commands and options.
