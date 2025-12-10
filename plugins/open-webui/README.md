@@ -1,82 +1,46 @@
-# Open WebUI Extensions for AirPods
+# Open WebUI Example Plugin for AirPods
 
-Auto-installed custom Tools, Functions, and Pipelines for Open WebUI. Automatically synced to the filesystem and imported into the database on `airpods start open-webui`.
+AirPods ships a single, easy-to-understand extension that demonstrates how Open WebUI filters work. The code lives in `plugins/open-webui/` and is automatically synced/imported whenever you run `airpods start open-webui`.
 
-## Extension Types
+## Example Prompt Helper
 
-Open WebUI supports three types of extensions:
+`example_prompt_helper.py` is a minimal filter that keeps conversations aligned without touching any external APIs.
 
-- **Tools** - Extend LLM capabilities with real-time data access (weather, stocks, web search, etc.)
-- **Functions** - Enhance Open WebUI features (custom UI elements, response formatting, content filtering)
-- **Pipelines** - Advanced API workflows for heavy processing or request transformation
+### Behavior
 
-## Available Extensions
+- **Inlet hook** – injects or extends a system prompt to keep conversations concise
+- **Outlet hook** – optionally appends a short signature so you can see the filter ran
+- **Valves** – tweak the instruction text, processing priority, and whether the signature is enabled
 
-### Tools (Real-time Data Access)
-- **weather_tool** - Fetch real-time weather data for any location using wttr.in API
-
-### Functions (UI & Feature Enhancements)
-- **system_prompt_enforcer** - Enforce consistent system prompts across conversations
-- **code_detector** - Detect programming languages in code blocks and add helpful context
-- **token_counter** - Track and limit token usage with basic estimation
-- **markdown_enhancer_function** - Add custom UI elements (collapsible sections, info boxes, code metadata)
-
-### Pipelines (Advanced Processing)
-- **content_moderation_pipeline** - Filter toxic/harmful content and detect PII before/after LLM processing
+This plugin is intentionally lightweight so you can copy it to build your own filters, tools, or pipelines.
 
 ## Auto-Installation
 
-Plugins are automatically synced and imported when starting Open WebUI:
+Every time `airpods start open-webui` runs:
 
 ```bash
 airpods start open-webui
-# Output during startup:
-# ✓ Synced 6 extension(s)
-# ... (service starts and becomes healthy) ...
-# ✓ Auto-imported 6 extension(s) into Open WebUI
+# ✓ Synced 1 extension(s)
+# ... service starts ...
+# ✓ Auto-imported 1 extension(s) into Open WebUI
 ```
 
-The process:
-1. **Filesystem sync**: Extension files are copied from `plugins/open-webui/` to `$AIRPODS_HOME/volumes/webui_plugins/`
-2. **Container mount**: The `webui_plugins` directory is mounted to `/app/backend/data/functions` in the container
-3. **Database import**: Once Open WebUI is healthy, extensions are automatically imported into the database via the API
-4. **Ready to use**: Extensions appear in the Admin Panel (Tools, Functions, or Pipelines sections), ready to enable and configure
+Behind the scenes:
 
-## Usage
+1. Files are copied from `plugins/open-webui/` into `$AIRPODS_HOME/volumes/webui_plugins/`
+2. That directory is mounted into the container at `/app/backend/data/functions`
+3. After Open WebUI becomes healthy, the extension is inserted into the SQLite database
+4. The plugin shows up in the Admin Panel ready to enable/configure
 
-1. Start: `airpods start open-webui`
-2. Open http://localhost:3000
-3. Go to **Admin Panel** → **Tools** / **Functions** / **Pipelines** (depending on extension type)
-4. Extensions are already imported—just enable and configure them
-5. Adjust settings (valves) as needed
+## Customize or Build New Extensions
 
-## Extension Details
+Drop additional `.py` files into `plugins/open-webui/` and they will be synced the same way. Open WebUI supports three extension types:
 
-### Weather Tool
-Allows LLMs to fetch real-time weather information:
-- Uses free wttr.in API (no API key required)
-- Supports metric/imperial units
-- Returns temperature, conditions, humidity, wind, UV index, etc.
-- Example: LLM can respond to "What's the weather in London?" with live data
+- **Tools** – real-time data access (HTTP APIs, shell commands, etc.)
+- **Functions (Filters)** – mutate requests/responses (system prompts, formatting, moderation)
+- **Pipelines** – advanced streaming or workflow orchestration
 
-### Markdown Enhancer Function
-Enhances AI responses with custom UI elements:
-- Adds metadata badges to code blocks (language, line count)
-- Auto-collapses long code blocks for readability
-- Converts `[INFO]`, `[WARNING]`, `[ERROR]` markers into styled boxes
-- Configurable via valves (enable/disable features, set collapse threshold)
-
-### Content Moderation Pipeline
-Advanced safety layer for LLM interactions:
-- Filters harmful content patterns before sending to LLM
-- Detects and optionally redacts PII (emails, SSNs, credit cards, phone numbers)
-- Enforces message length limits
-- Configurable blocked patterns (regex)
-- Runs as pre/post-processing pipeline
-
-## Creating Custom Extensions
-
-### Tool Template (Real-time Data Access)
+### Tool Template
 
 ```python
 """
@@ -96,17 +60,10 @@ class Tools:
         self.valves = self.Valves()
 
     def my_function(self, query: str) -> str:
-        """
-        Fetch data from external source.
-
-        :param query: Search query or location
-        :return: Formatted data as string
-        """
-        # Implement your data fetching logic
         return f"Result for: {query}"
 ```
 
-### Function Template (UI Enhancement)
+### Function Template
 
 ```python
 """
@@ -126,15 +83,13 @@ class Filter:
         self.valves = self.Valves()
 
     def inlet(self, body: dict, __user__: Optional[dict] = None) -> dict:
-        # Modify request before AI
         return body
 
     def outlet(self, body: dict, __user__: Optional[dict] = None) -> dict:
-        # Modify response after AI
         return body
 ```
 
-### Pipeline Template (Advanced Processing)
+### Pipeline Template
 
 ```python
 """
@@ -157,7 +112,6 @@ class Pipeline:
     def pipe(
         self, user_message: str, model_id: str, messages: List[Dict], body: Dict
     ) -> Dict[str, Any]:
-        # Transform the request/response
         return body
 
     async def on_startup(self):
@@ -167,34 +121,15 @@ class Pipeline:
         pass
 ```
 
-Save in `plugins/open-webui/`, restart Open WebUI, enable in Admin Panel.
+Save the file, restart Open WebUI, and import/enable it in the Admin Panel.
 
 ## Troubleshooting
 
-**Extensions not showing in Admin Panel:**
-- The auto-import happens after the service becomes healthy
-- Check the startup output for "Auto-imported X extension(s)" message
-- If import failed, check `airpods logs open-webui` for errors
-- Verify files exist in `$AIRPODS_HOME/volumes/webui_plugins/`
-- Manual fallback: Use the Open WebUI UI to import from the filesystem
-
-**Auto-import errors:**
-- Ensure the WebUI secret is valid (stored in `$AIRPODS_HOME/configs/webui_secret`)
-- Check network connectivity: `curl http://localhost:3000/api/config`
-- Extensions are still available in the container filesystem at `/app/backend/data/functions/` and can be imported manually through the UI
-
-**To manually import/re-import extensions:**
-1. Go to Admin Panel → Tools/Functions/Pipelines in Open WebUI
-2. Click "Import from Filesystem" or use the "+" button
-3. Select the extension files from `/app/backend/data/functions/`
-
-**Extension-specific issues:**
-- **Weather Tool**: Requires internet access from the container; check network connectivity
-- **Content Moderation Pipeline**: May need adjustment of blocked patterns for your use case
-- **Markdown Enhancer**: Works best with markdown-formatted responses
+- Ensure `$AIRPODS_HOME/volumes/webui_plugins/` contains the plugin files
+- Watch `airpods logs open-webui` for sync/import output
+- If imports fail, confirm the WebUI secret exists at `$AIRPODS_HOME/configs/webui_secret`
+- You can always import from `/app/backend/data/functions/` inside the container via the Admin Panel
 
 ## References
 
-- [Open WebUI Tools Documentation](https://docs.openwebui.com/features/plugin_system/)
-- [Open WebUI Functions Documentation](https://docs.openwebui.com/features/plugin_system/)
-- [Open WebUI Pipelines Documentation](https://docs.openwebui.com/features/plugin_system/)
+- [Open WebUI Plugin System](https://docs.openwebui.com/features/plugin_system/)
