@@ -126,13 +126,21 @@ internal = false
 stop_timeout = 10
 log_lines = 200
 ping_timeout = 2.0
+startup_timeout = 120
+startup_check_interval = 2.0
+max_concurrent_pulls = 3
 auto_confirm = false
+verbose = false
 debug = false
+
+`startup_timeout` / `startup_check_interval` govern how long `airpods start` waits for each service to go healthy, and `max_concurrent_pulls` controls how many images Podman will pull in parallel (use `--sequential` to temporarily override). Set `auto_confirm` to true for unattended workflows where you want `clean` to skip prompts, and `verbose` when you want lifecycle commands to always show resource reuse messages even without `-v/--verbose`.
 
 [dependencies]
 required = ["podman", "podman-compose", "uv"]
 optional = ["nvidia-smi"]
 skip_checks = false
+
+`skip_checks` lets airpods skip dependency probing entirely. This can be useful inside tightly controlled environments (CI, air-gapped towers) where you already know Podman, UV, and optional binaries are present and fast startup is preferred over repeated checks.
 
 [services.ollama]
 enabled = true
@@ -149,6 +157,8 @@ container = 11434
 [services.ollama.gpu]
 enabled = true
 force_cpu = false
+
+Set `force_cpu` when a service should never request GPU resources even if they are globally available. This makes it possible to disable GPU scheduling for individual services via configuration while still letting operators pass `airpods start --cpu` to force a CLI-wide CPU fallback.
 
 [services.ollama.health]
 path = "/api/tags"

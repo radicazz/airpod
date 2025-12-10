@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "airpods"
-version = "0.7.0"
+version = "0.8.0"
 description = "Rich, user-friendly CLI for orchestrating local AI services with Podman and UV."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,6 +26,14 @@ dev = [
   "pre-commit>=3.4,<4.0",
 ]
 
+[dependency-groups]
+dev = [
+  "pytest>=7.0,<9.0",
+  "pytest-mock>=3.0,<4.0",
+  "pytest-cov>=4.0,<6.0",
+  "pre-commit>=3.4,<4.0",
+]
+
 [project.scripts]
 airpods = "airpods.cli:main"
 
@@ -37,3 +45,6 @@ packages = ["airpods"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "plugins/open-webui" = "plugins/open-webui"
+
+[tool.uv]
+default-groups = ["dev"]

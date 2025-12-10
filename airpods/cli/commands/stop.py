@@ -109,7 +109,7 @@ def register(app: typer.Typer) -> CommandMap:
                 console.print(f"Stopping [accent]{spec.name}[/] (uptime: {uptime})...")
             else:
                 console.print(f"Stopping [accent]{spec.name}[/]...")
-            
+
             existed = manager.stop_service(spec, remove=remove, timeout=timeout)
             if not existed:
                 not_found_services.append(spec.name)

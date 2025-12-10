@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import tarfile
 from pathlib import Path
@@ -42,7 +43,9 @@ def mock_services():
         spec_ollama.container = "ollama-0"
         spec_ollama.image = "docker.io/ollama/ollama:latest"
         spec_ollama.name = "ollama"
-        mock.side_effect = lambda names: [spec_webui if n == "open-webui" else spec_ollama for n in names]
+        mock.side_effect = lambda names: [
+            spec_webui if n == "open-webui" else spec_ollama for n in names
+        ]
         yield mock
 
 
@@ -67,7 +70,9 @@ def _create_dummy_backup(home: Path) -> Path:
     return archive_path
 
 
-def test_backup_creates_archive(runner, mock_state_dirs, mock_podman, mock_run_podman, mock_services):
+def test_backup_creates_archive(
+    runner, mock_state_dirs, mock_podman, mock_run_podman, mock_services
+):
     configs = mock_state_dirs["configs"]
     volumes = mock_state_dirs["volumes"]
     (configs / "config.toml").write_text("test")
@@ -95,3 +100,17 @@ def test_restore_successful(runner, mock_state_dirs, mock_podman):
     assert result.exit_code == 0
     restored_db = mock_state_dirs["volumes"] / "airpods_webui_data" / "webui.db"
     assert restored_db.exists()
+
+
+def test_extract_archive_rejects_path_traversal(tmp_path):
+    archive = tmp_path / "escape.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        info = tarfile.TarInfo(name="../evil.txt")
+        data = b"evil"
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+
+    from airpods.cli.commands import backup as backup_cmds
+
+    with pytest.raises(backup_cmds.RestoreError):
+        backup_cmds._extract_archive(archive, tmp_path / "dest")

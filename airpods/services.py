@@ -54,6 +54,7 @@ class ServiceSpec:
     network_aliases: List[str] = field(default_factory=list)
     needs_gpu: bool = False
     health_path: Optional[str] = None
+    force_cpu: bool = False
 
     def runtime_env(self) -> Dict[str, str]:
         """Merge static env with runtime env from factory."""
@@ -139,6 +140,7 @@ class ServiceManager:
         gpu_device_flag: str | None = None,
         required_dependencies: Optional[Sequence[str]] = None,
         optional_dependencies: Optional[Sequence[str]] = None,
+        skip_dependency_checks: bool = False,
     ):
         self.registry = registry
         self.runtime = runtime
@@ -155,6 +157,7 @@ class ServiceManager:
             required_dependencies or ["podman", "podman-compose", "uv"]
         )
         self.optional_dependencies = list(optional_dependencies or [])
+        self.skip_dependency_checks = skip_dependency_checks
 
     # ----------------------------------------------------------------------------------
     # Discovery + validation helpers
@@ -165,9 +168,16 @@ class ServiceManager:
 
     def report_environment(self) -> EnvironmentReport:
         """Check system dependencies and GPU availability."""
-        checks = [
-            check_dependency(dep, ["--version"]) for dep in self.required_dependencies
-        ]
+        if self.skip_dependency_checks:
+            checks = [
+                CheckResult(name=dep, ok=True, detail="skipped")
+                for dep in self.required_dependencies
+            ]
+        else:
+            checks = [
+                check_dependency(dep, ["--version"])
+                for dep in self.required_dependencies
+            ]
         gpu_available, gpu_detail = detect_gpu()
         return EnvironmentReport(
             checks=checks, gpu_available=gpu_available, gpu_detail=gpu_detail
@@ -175,6 +185,8 @@ class ServiceManager:
 
     def ensure_podman(self) -> None:
         """Verify podman is installed and available."""
+        if self.skip_dependency_checks:
+            return
         report = self.report_environment()
         if "podman" in report.missing:
             raise ContainerRuntimeError("podman is required; install it and retry.")
@@ -270,12 +282,17 @@ class ServiceManager:
         return sizes
 
     def start_service(
-        self, spec: ServiceSpec, *, gpu_available: bool, force_cpu: bool = False
+        self,
+        spec: ServiceSpec,
+        *,
+        gpu_available: bool,
+        force_cpu_override: bool = False,
     ) -> ServiceStartResult:
         """Start a service by creating its pod and running its container."""
         pod_created = self.runtime.ensure_pod(
             spec.pod, spec.ports, network=self.network_name
         )
+        gpu_enabled = spec.needs_gpu and not spec.force_cpu and not force_cpu_override
         container_replaced = self.runtime.run_container(
             pod=spec.pod,
             name=spec.container,
@@ -283,7 +300,7 @@ class ServiceManager:
             env=spec.runtime_env(),
             volumes=[mount.as_tuple() for mount in spec.volumes],
             network_aliases=spec.network_aliases,
-            gpu=spec.needs_gpu and gpu_available and not force_cpu,
+            gpu=gpu_enabled and gpu_available,
             restart_policy=self.restart_policy,
             gpu_device_flag=self.gpu_device_flag,
         )

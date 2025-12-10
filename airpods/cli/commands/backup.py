@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
 import tarfile
 import tempfile
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -139,7 +141,9 @@ def _query_ollama_models(container: Optional[str]) -> Optional[List[Dict[str, An
     if not container:
         return None
     try:
-        result = _run_podman(["exec", container, "ollama", "list", "--json"], timeout=60)
+        result = _run_podman(
+            ["exec", container, "ollama", "list", "--json"], timeout=60
+        )
     except BackupError:
         return None
     data = result.stdout.strip()
@@ -185,7 +189,9 @@ def _scan_ollama_manifests() -> List[Dict[str, Any]]:
     return models
 
 
-def _collect_ollama_models(staging_dir: Path, container: Optional[str]) -> List[Dict[str, Any]]:
+def _collect_ollama_models(
+    staging_dir: Path, container: Optional[str]
+) -> List[Dict[str, Any]]:
     models = _query_ollama_models(container)
     if models is None:
         models = _scan_ollama_manifests()
@@ -203,7 +209,9 @@ def _extract_image_tag(image: str) -> str:
 
 def _inspect_image_version(image: str) -> Optional[str]:
     try:
-        result = _run_podman(["image", "inspect", image, "--format", "{{json .Labels}}"], timeout=30)
+        result = _run_podman(
+            ["image", "inspect", image, "--format", "{{json .Labels}}"], timeout=30
+        )
     except BackupError:
         return None
     try:
@@ -247,11 +255,31 @@ def _create_archive(staging_dir: Path, output_path: Path) -> None:
         tar.add(staging_dir, arcname=BACKUP_ROOT)
 
 
+def _safe_extractall(tar: tarfile.TarFile, target: Path) -> None:
+    """Extract members ensuring paths stay within target directory."""
+    target_path = target.resolve()
+
+    def _is_within_directory(base: Path, candidate: Path) -> bool:
+        base_str = str(base)
+        candidate_str = str(candidate)
+        return os.path.commonpath([base_str, candidate_str]) == base_str
+
+    for member in tar.getmembers():
+        member_path = (target_path / member.name).resolve()
+        if not _is_within_directory(target_path, member_path):
+            raise RestoreError(
+                f"Archive member {member.name} escapes target directory; aborting restore."
+            )
+    tar.extractall(target_path)
+
+
 def _extract_archive(archive: Path, target: Path) -> Path:
     try:
         with tarfile.open(archive, "r:*") as tar:
-            # Use filter='data' to prevent security issues from malicious tar archives (Python 3.14+)
-            tar.extractall(target, filter='data')
+            if sys.version_info >= (3, 12):
+                tar.extractall(target, filter="data")
+            else:
+                _safe_extractall(tar, target)
     except (tarfile.TarError, OSError) as exc:
         raise RestoreError(f"Failed to extract archive: {exc}") from exc
     root = target / BACKUP_ROOT
@@ -456,7 +484,9 @@ def register(app: typer.Typer) -> CommandMap:
     @app.command(context_settings=COMMAND_CONTEXT)
     def restore(
         ctx: typer.Context,
-        archive: Path = typer.Argument(..., help="Path to a backup archive created by airpods."),
+        archive: Path = typer.Argument(
+            ..., help="Path to a backup archive created by airpods."
+        ),
         help_: bool = command_help_option(),
         backup_existing: bool = typer.Option(
             True,
@@ -510,7 +540,9 @@ def register(app: typer.Typer) -> CommandMap:
             manifest_copy = _persist_manifest_copy(manifest)
 
         console.print("[ok]Restore complete!")
-        console.print("[info]Next steps: re-pull any needed Ollama models based on metadata and run 'airpods start'.")
+        console.print(
+            "[info]Next steps: re-pull any needed Ollama models based on metadata and run 'airpods start'."
+        )
         if metadata_path:
             console.print(f"[info]Model metadata saved at {metadata_path}")
         if manifest_copy:

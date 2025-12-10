@@ -63,3 +63,52 @@ def test_pull_images_bubbles_exceptions(manager: ServiceManager, service_specs):
     # With concurrent execution, the exact order of calls can vary
     # Just ensure the exception was raised and at least the failing call happened
     assert call_count >= 2
+
+
+def test_start_service_respects_config_force_cpu(manager: ServiceManager):
+    spec = ServiceSpec(
+        name="svc",
+        pod="pod",
+        container="ctr",
+        image="img",
+        needs_gpu=True,
+        force_cpu=True,
+    )
+    manager.runtime.ensure_pod.return_value = False
+    manager.runtime.run_container.return_value = False
+
+    manager.start_service(spec, gpu_available=True)
+
+    assert manager.runtime.run_container.call_args.kwargs["gpu"] is False
+
+
+def test_start_service_force_cpu_override(manager: ServiceManager):
+    spec = ServiceSpec(
+        name="svc",
+        pod="pod",
+        container="ctr",
+        image="img",
+        needs_gpu=True,
+    )
+    manager.runtime.ensure_pod.return_value = False
+    manager.runtime.run_container.return_value = False
+
+    manager.start_service(spec, gpu_available=True, force_cpu_override=True)
+
+    assert manager.runtime.run_container.call_args.kwargs["gpu"] is False
+
+
+def test_report_environment_skips_dependency_checks():
+    runtime = MagicMock()
+    mgr = ServiceManager(
+        ServiceRegistry([]),
+        runtime,
+        required_dependencies=["podman"],
+        skip_dependency_checks=True,
+    )
+
+    report = mgr.report_environment()
+    assert report.checks[0].detail == "skipped"
+
+    # Should not raise even if podman would be missing
+    mgr.ensure_podman()

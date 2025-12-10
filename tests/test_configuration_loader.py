@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from airpods import state
 from airpods.configuration import loader as loader_module
+from airpods.configuration.errors import ConfigurationError
+from airpods.configuration.resolver import _resolve_string
 import pytest
 from pydantic import ValidationError
 
@@ -57,3 +59,13 @@ def test_cli_config_max_concurrent_bounds():
 
     with pytest.raises(ValidationError):
         CLIConfig(max_concurrent_pulls=11)
+
+
+def test_template_resolver_allows_repeated_references():
+    context = {"runtime": {"host_gateway": "host.containers.internal"}}
+    value = _resolve_string(
+        "{{runtime.host_gateway}}/{{runtime.host_gateway}}",
+        context,
+        location="test",
+    )
+    assert value == "host.containers.internal/host.containers.internal"

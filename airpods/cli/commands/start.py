@@ -91,7 +91,7 @@ def register(app: typer.Typer) -> CommandMap:
 
         if config_path is None:
             config_path = locate_config_file()
-        
+
         # Check verbose mode from context
         verbose = is_verbose_mode(ctx)
         print_config_info(config_path, verbose=verbose)
@@ -101,6 +101,7 @@ def register(app: typer.Typer) -> CommandMap:
 
         # Enable CUDA logging during startup flows
         import airpods.config as config_module
+
         config_module.ENABLE_COMFY_CUDA_LOG = True
 
         cli_config = get_cli_config()
@@ -197,7 +198,7 @@ def register(app: typer.Typer) -> CommandMap:
         service_urls: dict[str, str] = {}
         failed_services = []
         timeout_services = []
-        
+
         # Pull images with simple logging
         def _image_progress(phase, index, _total_count, spec):
             if phase == "start":
@@ -214,6 +215,7 @@ def register(app: typer.Typer) -> CommandMap:
                         console.print(f"[ok]✓[/] Pulled {spec.name}")
 
         pull_start_times: dict[str, float] = {}
+
         def _track_pull_start(phase, index, _total_count, spec):
             if phase == "start":
                 pull_start_times[spec.name] = time.perf_counter()
@@ -228,10 +230,12 @@ def register(app: typer.Typer) -> CommandMap:
         # Start services with simple logging
         for spec in specs_to_start:
             console.print(f"Starting [accent]{spec.name}[/]...")
-            
+
             try:
                 manager.start_service(
-                    spec, gpu_available=gpu_available, force_cpu=force_cpu
+                    spec,
+                    gpu_available=gpu_available,
+                    force_cpu_override=force_cpu,
                 )
             except Exception as e:
                 console.print(f"[error]✗ Failed to start {spec.name}: {e}[/]")
@@ -241,43 +245,43 @@ def register(app: typer.Typer) -> CommandMap:
         # Wait for health checks with timeout
         start_time = time.time()
         timeout_seconds = DEFAULT_STARTUP_TIMEOUT
-        
+
         while True:
             elapsed = time.time() - start_time
             if elapsed >= timeout_seconds:
                 break
-                
+
             pod_rows = manager.pod_status_rows() or {}
             all_done = True
-            
+
             for spec in specs_to_start:
                 if spec.name in failed_services:
                     continue
-                    
+
                 row = pod_rows.get(spec.pod)
                 if not row:
                     all_done = False
                     continue
-                    
+
                 pod_status = (row.get("Status") or "").strip()
-                
+
                 if pod_status in {"Exited", "Error"}:
                     if spec.name not in failed_services:
                         failed_services.append(spec.name)
                     continue
-                    
+
                 if pod_status != "Running":
                     all_done = False
                     continue
-                    
+
                 # Service is running, check health if needed
                 if spec.name in service_urls:
                     continue  # Already healthy
-                    
+
                 port_bindings = manager.service_ports(spec)
                 host_ports = collect_host_ports(spec, port_bindings)
                 host_port = host_ports[0] if host_ports else None
-                
+
                 if not spec.health_path or host_port is None:
                     # No health check needed
                     if host_port:
@@ -285,24 +289,26 @@ def register(app: typer.Typer) -> CommandMap:
                     else:
                         service_urls[spec.name] = ""
                     continue
-                    
+
                 if check_service_health(spec, host_port):
                     service_urls[spec.name] = f"http://localhost:{host_port}"
                 else:
                     all_done = False
-                    
+
             if all_done:
                 break
-                
+
             time.sleep(DEFAULT_STARTUP_CHECK_INTERVAL)
-            
+
         # Handle timeouts
         for spec in specs_to_start:
             if spec.name not in failed_services and spec.name not in service_urls:
                 timeout_services.append(spec.name)
 
-        # Categorize results  
-        healthy_services = [name for name in service_urls.keys() if name not in failed_services]
+        # Categorize results
+        healthy_services = [
+            name for name in service_urls.keys() if name not in failed_services
+        ]
         failed = failed_services
 
         # Show clean completion summary
@@ -331,7 +337,11 @@ def register(app: typer.Typer) -> CommandMap:
             )
 
         # Auto-import plugins into Open WebUI if service is healthy
-        if webui_specs and "open-webui" in service_urls and "open-webui" not in failed_services:
+        if (
+            webui_specs
+            and "open-webui" in service_urls
+            and "open-webui" not in failed_services
+        ):
             with status_spinner("Auto-importing plugins into Open WebUI"):
                 try:
                     plugins_dir = plugins.get_plugins_target_dir()
@@ -412,7 +422,9 @@ def _pull_images_only(specs: list[ServiceSpec], max_concurrent: int) -> None:
 
         return table
 
-    with Live(_make_table(), refresh_per_second=4, console=console, transient=True) as live:
+    with Live(
+        _make_table(), refresh_per_second=4, console=console, transient=True
+    ) as live:
 
         def _image_progress(phase, index, _total_count, spec):
             if phase == "start":

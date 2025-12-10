@@ -10,7 +10,7 @@
 
 ## Role In The Stack
 
-- Runs as a Podman-managed service (`gateway`/`caddy`) controlled by `airpods init/start/stop/status/logs` alongside Ollama, Open WebUI, and future web UIs.
+- Runs as a Podman-managed service (`gateway`/`caddy`) controlled by `airpods start/stop/status/logs` (with `start --init` handling dependency prep) alongside Ollama, Open WebUI, and future web UIs.
 - Default host exposure: only Open WebUI is host-facing; all other services (llama, ComfyUI, etc.) stay on the internal Podman network.
 - When enabled, the gateway fronts the host entrypoint and can hide Open WebUI behind a single port:
   - Browser → `localhost:<auth_port>` → Caddy → internal Open WebUI.
@@ -67,7 +67,7 @@
     - `get_auth_secret_path(home: Path) -> Path`.
     - `ensure_auth_secret(home: Path) -> str`:
       - Reads `<HOME>/auth_secret` if it exists; otherwise generates a new random secret, writes it with restrictive permissions (e.g. `0600`), and returns it.
-  - `airpods init` and `airpods start` are expected to call `ensure_auth_secret` so the gateway always has a password to use.
+  - `airpods start --init` (and regular `airpods start`) are expected to call `ensure_auth_secret` so the gateway always has a password to use.
 - **Auth configuration knobs**:
   - Gateway MVP plan calls for configuration fields like:
     - `auth_enabled: bool` – whether to run Caddy and hide Open WebUI behind it.
@@ -130,7 +130,7 @@
   - Implementing or standardizing `get_airpods_home()` and path helpers so that `AIRPODS_HOME` resolution is consistent.
   - Adding helpers for `auth_secret` creation and retrieval.
   - Introducing a Caddy `ServiceSpec` with image, ports, volumes, network, and health URL, following the existing service pattern in `airpods/config.py`.
-  - Wiring `airpods init` and `airpods start` to:
+  - Wiring `airpods start --init` and `airpods start` to:
     - Ensure `auth_secret` and `Caddyfile` exist when auth is enabled.
     - Start Open WebUI without a host bind when the gateway is in use.
     - Start the gateway container and report its URL/port and auth status to the user.

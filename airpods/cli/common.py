@@ -67,6 +67,7 @@ def _apply_cli_config(config) -> None:
         gpu_device_flag=_CONFIG.runtime.gpu_device_flag,
         required_dependencies=_CONFIG.dependencies.required,
         optional_dependencies=_CONFIG.dependencies.optional,
+        skip_dependency_checks=_CONFIG.dependencies.skip_checks,
     )
 
 
@@ -115,7 +116,9 @@ def print_version() -> None:
     console.print(f"[bold]airpods[/bold] [accent]v{__version__}[/]")
 
 
-def print_network_status(created: bool, network_name: str, verbose: bool = True) -> None:
+def print_network_status(
+    created: bool, network_name: str, verbose: bool = True
+) -> None:
     """Display network creation or reuse status, respecting verbose mode."""
     if not verbose:
         return
@@ -125,7 +128,9 @@ def print_network_status(created: bool, network_name: str, verbose: bool = True)
         console.print(f"Network [accent]{network_name}[/]: [ok]✓ exists[/]")
 
 
-def print_volume_status(results: list[VolumeEnsureResult], verbose: bool = True) -> None:
+def print_volume_status(
+    results: list[VolumeEnsureResult], verbose: bool = True
+) -> None:
     """Display volume creation or reuse status for multiple volumes, respecting verbose mode."""
     if not verbose:
         return

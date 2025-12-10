@@ -137,11 +137,14 @@ def test_clean_volumes_only(
     (volumes_dir / "airpods_ollama_data").mkdir()
     (volumes_dir / "comfyui").mkdir()
     (volumes_dir / "comfyui" / "workspace").mkdir()
+    plugin_dir = volumes_dir / "webui_plugins"
+    plugin_dir.mkdir()
 
     result = runner.invoke(app, ["clean", "--volumes", "--force"])
     assert result.exit_code == 0
     assert "Cleaning volumes" in result.stdout
     assert mock_manager.runtime.remove_volume.call_count == 2
+    assert not plugin_dir.exists()
 
 
 def test_clean_images_only(mock_manager, mock_resolve_services, mock_podman):

@@ -74,11 +74,13 @@ def _collect_cleanup_targets(
         vol_dir = volumes_dir()
         if vol_dir.exists():
             for item in vol_dir.iterdir():
-                if item.is_dir() and item.name.startswith("airpods_"):
+                if not item.is_dir():
+                    continue
+                if item.name.startswith("airpods_") or item.name in {
+                    "comfyui",
+                    "webui_plugins",
+                }:
                     plan.bind_mounts.append(item)
-            comfyui_dir = vol_dir / "comfyui"
-            if comfyui_dir.exists():
-                plan.bind_mounts.append(comfyui_dir)
 
     if images:
         for spec in specs:

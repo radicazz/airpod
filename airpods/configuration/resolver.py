@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Set
+from typing import Any, Dict
 
 from .errors import ConfigurationError
 from .schema import AirpodsConfig
@@ -47,8 +47,8 @@ def resolve_templates(config: AirpodsConfig) -> AirpodsConfig:
 
 def _resolve_string(template: str, context: Dict[str, Any], *, location: str) -> str:
     missing: list[str] = []
-    seen_refs: Set[str] = set()
     iteration = 0
+    stack: list[str] = []
 
     current = template
     while "{{" in current:
@@ -60,12 +60,15 @@ def _resolve_string(template: str, context: Dict[str, Any], *, location: str) ->
 
         def _replace(match: re.Match[str]) -> str:
             path = match.group(1).strip()
-            if path in seen_refs:
+            if path in stack:
                 raise ConfigurationError(
-                    f"Circular reference detected: {{{{path}}}} in {location}"
+                    f"Circular reference detected: {{{{{path}}}}} in {location}"
                 )
-            seen_refs.add(path)
-            value = _lookup_path(path, context)
+            stack.append(path)
+            try:
+                value = _lookup_path(path, context)
+            finally:
+                stack.pop()
             if value is None:
                 missing.append(path)
                 return match.group(0)

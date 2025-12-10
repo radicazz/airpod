@@ -58,7 +58,7 @@ def _root_command(
     # Store verbose flag in context for subcommands
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
-    
+
     if version:
         print_version()
         raise typer.Exit()
