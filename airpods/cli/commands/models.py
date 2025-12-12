@@ -53,10 +53,12 @@ def ensure_ollama_running() -> int:
 
 @models_app.command(name="list", context_settings=COMMAND_CONTEXT)
 def list_models_cmd(
+    ctx: typer.Context,
     help_: bool = command_help_option(),
 ) -> None:
     """List all installed Ollama models."""
 
+    maybe_show_command_help(ctx, help_)
     port = ensure_ollama_running()
 
     try:
@@ -112,11 +114,13 @@ def list_models_cmd(
 
 @models_app.command(name="pull", context_settings=COMMAND_CONTEXT)
 def pull_model_cmd(
+    ctx: typer.Context,
     model: str = typer.Argument(..., help="Model name (e.g., llama3.2, qwen2.5:7b)"),
     help_: bool = command_help_option(),
 ) -> None:
     """Pull a model from the Ollama library."""
 
+    maybe_show_command_help(ctx, help_)
     port = ensure_ollama_running()
 
     try:
@@ -187,6 +191,7 @@ def pull_model_cmd(
 
 @models_app.command(name="pull-hf", context_settings=COMMAND_CONTEXT)
 def pull_hf_cmd(
+    ctx: typer.Context,
     repo: str = typer.Argument(
         ..., help="HuggingFace repo ID (e.g., bartowski/Llama-3.2-3B-Instruct-GGUF)"
     ),
@@ -200,6 +205,7 @@ def pull_hf_cmd(
 ) -> None:
     """Pull a GGUF model from HuggingFace and import to Ollama."""
 
+    maybe_show_command_help(ctx, help_)
     port = ensure_ollama_running()
 
     try:
@@ -303,6 +309,7 @@ def pull_hf_cmd(
 
 @models_app.command(name="remove", context_settings=COMMAND_CONTEXT)
 def remove_model_cmd(
+    ctx: typer.Context,
     model: str = typer.Argument(
         ..., help="Model name to remove", shell_complete=model_name_completion
     ),
@@ -311,6 +318,7 @@ def remove_model_cmd(
 ) -> None:
     """Remove an installed model."""
 
+    maybe_show_command_help(ctx, help_)
     port = ensure_ollama_running()
 
     try:
@@ -338,6 +346,7 @@ def remove_model_cmd(
 
 @models_app.command(name="info", context_settings=COMMAND_CONTEXT)
 def info_model_cmd(
+    ctx: typer.Context,
     model: str = typer.Argument(
         ..., help="Model name", shell_complete=model_name_completion
     ),
@@ -345,6 +354,7 @@ def info_model_cmd(
 ) -> None:
     """Show detailed information about a model."""
 
+    maybe_show_command_help(ctx, help_)
     port = ensure_ollama_running()
 
     try:

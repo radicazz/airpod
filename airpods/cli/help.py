@@ -109,13 +109,15 @@ def exit_with_help(
     show_help: bool = True,
     code: int = 1,
 ) -> None:
-    """Print an optional message/tip, show command help, then exit."""
+    """Print an error message and suggest using --help for more information."""
     if message:
-        console.print(f"[warn]{message}[/]")
+        console.print(f"[error]{message}[/]")
     if tip:
         console.print(f"[info]{tip}[/]")
     if show_help:
-        show_help_for_context(ctx)
+        # Suggest help instead of printing the full help text
+        command_name = ctx.command_path or "airpods"
+        console.print(f"[info]Try '{command_name} --help' for more information.[/]")
     raise typer.Exit(code=code)
 
 

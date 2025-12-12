@@ -4,14 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-import tempfile
-import time
-from pathlib import Path
+import subprocess
 from typing import Any, Callable, Optional
 
 import requests
-
-from airpods.logging import console
 
 
 class OllamaAPIError(Exception):
@@ -257,6 +253,126 @@ def format_time_ago(timestamp_str: str) -> str:
 # HuggingFace Integration
 
 
+def search_huggingface_models(
+    query: str, limit: int = 5
+) -> list[dict[str, Any]]:
+    """
+    Search HuggingFace for GGUF models matching the query.
+
+    Args:
+        query: Search query (model name, keywords, etc.)
+        limit: Maximum number of results to return
+
+    Returns:
+        List of dicts with keys: repo_id, author, model_name, downloads, likes
+
+    Raises:
+        OllamaAPIError: If HF API fails
+    """
+    try:
+        from huggingface_hub import HfApi
+
+        api = HfApi()
+        
+        # Search for models with GGUF in the name/tags
+        models = api.list_models(
+            search=f"{query} GGUF",
+            sort="downloads",
+            direction=-1,
+            limit=limit * 3,  # Get more to filter
+        )
+        
+        results = []
+        for model in models:
+            # Filter for models that likely contain GGUF files
+            if "gguf" in model.id.lower() or (model.tags and "gguf" in " ".join(model.tags).lower()):
+                repo_parts = model.id.split("/")
+                results.append({
+                    "repo_id": model.id,
+                    "author": repo_parts[0] if len(repo_parts) > 1 else "unknown",
+                    "model_name": repo_parts[1] if len(repo_parts) > 1 else repo_parts[0],
+                    "downloads": getattr(model, "downloads", 0),
+                    "likes": getattr(model, "likes", 0),
+                })
+                
+                if len(results) >= limit:
+                    break
+        
+        return results
+
+    except ImportError as e:
+        raise OllamaAPIError(
+            "huggingface-hub not installed. Install with: uv pip install huggingface-hub"
+        ) from e
+    except Exception as e:
+        raise OllamaAPIError(f"Failed to search HuggingFace: {e}") from e
+
+
+def search_ollama_library(query: str, limit: int = 5) -> list[dict[str, Any]]:
+    """
+    Search Ollama's public library for models.
+    
+    Note: This uses a best-effort approach since Ollama doesn't have a public search API.
+    We'll return popular models that match the query.
+
+    Args:
+        query: Search query (model name, keywords, etc.)
+        limit: Maximum number of results to return
+
+    Returns:
+        List of dicts with keys: name, description, tags
+    """
+    query_lower = query.lower()
+    
+    # Curated list of popular Ollama models with metadata
+    # This could be enhanced by scraping ollama.ai/library or using their API if available
+    popular_models = [
+        {"name": "llama3.2", "description": "Meta's Llama 3.2 model", "tags": ["llama", "meta", "instruct", "3b", "1b"], "size": "small"},
+        {"name": "llama3.2:3b", "description": "Meta's Llama 3.2 3B model", "tags": ["llama", "meta", "instruct"], "size": "small"},
+        {"name": "llama3.1", "description": "Meta's Llama 3.1 model", "tags": ["llama", "meta", "instruct", "8b", "70b", "405b"], "size": "medium"},
+        {"name": "llama3.1:8b", "description": "Meta's Llama 3.1 8B model", "tags": ["llama", "meta", "instruct"], "size": "medium"},
+        {"name": "qwen2.5", "description": "Alibaba's Qwen 2.5 model", "tags": ["qwen", "alibaba", "instruct"], "size": "medium"},
+        {"name": "qwen2.5:7b", "description": "Alibaba's Qwen 2.5 7B model", "tags": ["qwen", "alibaba", "instruct"], "size": "medium"},
+        {"name": "mistral", "description": "Mistral AI's 7B model", "tags": ["mistral", "instruct"], "size": "medium"},
+        {"name": "mixtral", "description": "Mistral AI's MoE model", "tags": ["mistral", "moe", "instruct"], "size": "large"},
+        {"name": "phi3", "description": "Microsoft's Phi-3 model", "tags": ["phi", "microsoft", "small"], "size": "small"},
+        {"name": "gemma2", "description": "Google's Gemma 2 model", "tags": ["gemma", "google"], "size": "medium"},
+        {"name": "deepseek-coder", "description": "DeepSeek's coding model", "tags": ["deepseek", "code", "programming"], "size": "medium"},
+        {"name": "codellama", "description": "Meta's Code Llama model", "tags": ["llama", "code", "programming"], "size": "medium"},
+        {"name": "starcoder2", "description": "StarCoder 2 coding model", "tags": ["starcoder", "code", "programming"], "size": "medium"},
+        {"name": "llava", "description": "Vision-language model", "tags": ["vision", "multimodal", "image"], "size": "medium"},
+        {"name": "nous-hermes", "description": "Nous Research Hermes model", "tags": ["nous", "hermes", "instruct"], "size": "medium"},
+    ]
+    
+    # Score each model based on query match
+    scored_models = []
+    for model in popular_models:
+        score = 0
+        
+        # Exact name match gets highest score
+        if query_lower == model["name"].lower():
+            score += 100
+        # Partial name match
+        elif query_lower in model["name"].lower():
+            score += 50
+        
+        # Tag matches
+        for tag in model["tags"]:
+            if query_lower in tag.lower():
+                score += 10
+        
+        # Description match
+        if query_lower in model["description"].lower():
+            score += 5
+        
+        if score > 0:
+            scored_models.append((score, model))
+    
+    # Sort by score (descending) and return top results
+    scored_models.sort(key=lambda x: x[0], reverse=True)
+    return [model for score, model in scored_models[:limit]]
+
+
 def generate_model_name_from_repo(repo_id: str, filename: Optional[str] = None) -> str:
     """
     Generate a model name from HuggingFace repo ID and optional filename.
@@ -377,7 +493,7 @@ def pull_from_huggingface(
     """
     try:
         from huggingface_hub import hf_hub_download
-        import subprocess
+        import airpods.config as config_module
 
         # Download from HuggingFace
         if progress_callback:
@@ -395,60 +511,68 @@ def pull_from_huggingface(
         if progress_callback:
             progress_callback("download", 100, 100)
 
-        # Create modelfile
+        # Resolve container name from config (fallback to default)
+        spec = config_module.REGISTRY.get("ollama")
+        container = spec.container if spec and spec.container else "ollama-0"
+
+        # Ensure service is up before attempting to copy
+        if not ensure_ollama_available(port):
+            raise OllamaAPIError(
+                "Ollama service not available. Start with 'airpods start ollama'"
+            )
+
         if progress_callback:
             progress_callback("import", 0, 100)
 
-        modelfile_content = f"FROM {local_path}\n"
+        remote_model_path = "/tmp/model.gguf"
+        modelfile_content = f"FROM {remote_model_path}\n"
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".modelfile", delete=False
-        ) as f:
-            f.write(modelfile_content)
-            modelfile_path = f.name
-
+        # Copy GGUF file into the container
         try:
-            # Import into Ollama via CLI (requires podman exec)
-            # We'll use the Ollama container name from the service spec
-            from airpods import podman
-
-            # Copy modelfile into container
-            container = "ollama-0"  # Default from config
-
-            # First, check if we can reach the Ollama API
-            if not ensure_ollama_available(port):
-                raise OllamaAPIError(
-                    "Ollama service not available. Start with 'airpods start ollama'"
-                )
-
-            # Use podman exec to run ollama create command
-            result = subprocess.run(
-                [
-                    "podman",
-                    "exec",
-                    "-i",
-                    container,
-                    "sh",
-                    "-c",
-                    f"cat > /tmp/Modelfile && ollama create {model_name} -f /tmp/Modelfile",
-                ],
-                input=modelfile_content.encode(),
+            subprocess.run(
+                ["podman", "cp", local_path, f"{container}:{remote_model_path}"],
+                check=True,
                 capture_output=True,
-                check=False,
             )
+        except subprocess.CalledProcessError as exc:
+            stderr = exc.stderr.decode() if exc.stderr else ""
+            raise OllamaAPIError(
+                f"Failed to copy model into container '{container}': {stderr or exc}"
+            ) from exc
 
-            if result.returncode != 0:
-                error_msg = result.stderr.decode() if result.stderr else "Unknown error"
-                raise OllamaAPIError(f"Failed to import model: {error_msg}")
+        # Create the model inside the container, piping the Modelfile via stdin
+        result = subprocess.run(
+            [
+                "podman",
+                "exec",
+                "-i",
+                container,
+                "ollama",
+                "create",
+                model_name,
+                "-f",
+                "/dev/stdin",
+            ],
+            input=modelfile_content.encode(),
+            capture_output=True,
+            check=False,
+        )
 
-            if progress_callback:
-                progress_callback("import", 100, 100)
+        if result.returncode != 0:
+            stderr = result.stderr.decode() if result.stderr else "Unknown error"
+            raise OllamaAPIError(f"Failed to import model: {stderr}")
 
-            return True
+        # Try to clean up the copied file; ignore failures
+        subprocess.run(
+            ["podman", "exec", container, "rm", "-f", remote_model_path],
+            check=False,
+            capture_output=True,
+        )
 
-        finally:
-            # Clean up modelfile
-            Path(modelfile_path).unlink(missing_ok=True)
+        if progress_callback:
+            progress_callback("import", 100, 100)
+
+        return True
 
     except ImportError as e:
         raise OllamaAPIError(
