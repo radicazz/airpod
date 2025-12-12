@@ -345,8 +345,13 @@ def register(app: typer.Typer) -> CommandMap:
                 try:
                     plugins_dir = plugins.get_plugins_target_dir()
                     container_name = webui_specs[0].container
+                    owner_id = plugins.resolve_plugin_owner_user_id(
+                        container_name, cli_config.plugin_owner
+                    )
                     imported = plugins.import_plugins_to_webui(
-                        plugins_dir, container_name=container_name
+                        plugins_dir,
+                        admin_user_id=owner_id,
+                        container_name=container_name,
                     )
                     if imported > 0:
                         console.print(

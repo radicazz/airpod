@@ -129,11 +129,12 @@ ping_timeout = 2.0
 startup_timeout = 120
 startup_check_interval = 2.0
 max_concurrent_pulls = 3
+plugin_owner = "auto" # auto, admin, airpods
 auto_confirm = false
 verbose = false
 debug = false
 
-`startup_timeout` / `startup_check_interval` govern how long `airpods start` waits for each service to go healthy, and `max_concurrent_pulls` controls how many images Podman will pull in parallel (use `--sequential` to temporarily override). Set `auto_confirm` to true for unattended workflows where you want `clean` to skip prompts, and `verbose` when you want lifecycle commands to always show resource reuse messages even without `-v/--verbose`.
+`startup_timeout` / `startup_check_interval` govern how long `airpods start` waits for each service to go healthy, and `max_concurrent_pulls` controls how many images Podman will pull in parallel (use `--sequential` to temporarily override). `plugin_owner` controls which Open WebUI user id owns auto‑imported plugins: `"auto"` reuses an existing admin if present or creates a dedicated `airpods-system` owner on fresh installs, `"admin"` only reuses an admin, and `"airpods"` always uses the dedicated owner. Set `auto_confirm` to true for unattended workflows where you want `clean` to skip prompts, and `verbose` when you want lifecycle commands to always show resource reuse messages even without `-v/--verbose`.
 
 [dependencies]
 required = ["podman", "podman-compose", "uv"]
