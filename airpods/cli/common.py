@@ -85,6 +85,7 @@ COMMAND_ALIASES = {
     "down": "stop",
     "ps": "status",
     "info": "status",
+    "model": "models",
 }
 
 ALIAS_HELP_TEMPLATE = "[alias]Alias for {canonical}[/]"
@@ -209,3 +210,20 @@ def format_transfer_label(
     megabytes = size_bytes / (1024**2)
     speed = megabytes / elapsed_seconds
     return f"{size_label} @ {speed:.1f} MB/s ({elapsed_seconds:.1f}s)"
+
+
+def get_ollama_port() -> int:
+    """
+    Get the Ollama service port from configuration.
+    
+    Returns:
+        Ollama port number (default: 11434)
+    """
+    # Find Ollama service in registry
+    for spec in config_module.REGISTRY:
+        if spec.name == "ollama":
+            if spec.ports and len(spec.ports) > 0:
+                return spec.ports[0].host
+    
+    # Fallback to default
+    return 11434
