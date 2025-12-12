@@ -127,9 +127,9 @@ def build_help_table(
 ) -> Table:
     table = ui.themed_grid(padding=(0, 3))
     styles = column_styles or (
-        {"style": f"bold {PALETTE['green']}", "no_wrap": True},
-        {"style": f"bold {PALETTE['purple']}", "no_wrap": True},
-        {"style": PALETTE["fg"]},
+        {"style": f"bold {PALETTE['bright_green']}", "no_wrap": True},  # Commands
+        {"style": f"bold {PALETTE['bright_purple']}", "no_wrap": True},  # Aliases
+        {"style": PALETTE["fg"]},  # Descriptions
     )
     for column in styles:
         table.add_column(**column)
@@ -141,24 +141,29 @@ def build_help_table(
 def build_command_table(ctx: typer.Context) -> Table:
     rows = command_help_rows(ctx)
     column_styles = (
-        {"style": f"bold {PALETTE['green']}", "no_wrap": True},
-        {"style": f"bold {PALETTE['purple']}", "no_wrap": True},
-        {"style": f"bold {PALETTE['cyan']}", "no_wrap": True},
-        {"style": PALETTE["fg"]},
+        {"style": f"bold {PALETTE['bright_green']}", "no_wrap": True},  # Command names
+        {"style": f"bold {PALETTE['bright_purple']}", "no_wrap": True},  # Aliases
+        {"style": f"bold {PALETTE['bright_cyan']}", "no_wrap": True},  # Arguments
+        {"style": PALETTE["fg"]},  # Descriptions
     )
     return build_help_table(ctx, rows, column_styles=column_styles)
 
 
 def build_option_table(ctx: typer.Context) -> Table:
     rows = option_help_rows(ctx)
-    return build_help_table(ctx, rows)
+    column_styles = (
+        {"style": f"bold {PALETTE['bright_yellow']}", "no_wrap": True},  # Option names
+        {"style": f"bold {PALETTE['bright_orange']}", "no_wrap": True},  # Short flags
+        {"style": PALETTE["fg"]},  # Descriptions
+    )
+    return build_help_table(ctx, rows, column_styles=column_styles)
 
 
 def build_argument_table(ctx: typer.Context) -> Table:
     rows = argument_help_rows(ctx)
     column_styles = (
-        {"style": f"bold {PALETTE['green']}", "no_wrap": True},
-        {"style": PALETTE["fg"]},
+        {"style": f"bold {PALETTE['bright_cyan']}", "no_wrap": True},  # Argument names
+        {"style": PALETTE["fg"]},  # Descriptions
     )
     return build_help_table(ctx, rows, column_styles=column_styles)
 

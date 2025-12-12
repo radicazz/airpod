@@ -344,11 +344,13 @@ def register(app: typer.Typer) -> CommandMap:
         ):
             from airpods import ollama as ollama_module
             from airpods.cli.common import get_ollama_port
+            from airpods.configuration import get_config
             
-            spec = ollama_specs[0]
-            auto_pull = spec.raw_config.get("auto_pull_models", [])
+            config = get_config()
+            auto_pull = config.services.get("ollama", None)
+            auto_pull_models = auto_pull.auto_pull_models if auto_pull else []
             
-            if auto_pull:
+            if auto_pull_models:
                 port = get_ollama_port()
                 
                 # Get list of installed models
@@ -357,7 +359,7 @@ def register(app: typer.Typer) -> CommandMap:
                     installed_names = {m.get("name") for m in installed}
                     
                     # Filter out models that are already installed
-                    to_pull = [m for m in auto_pull if m not in installed_names]
+                    to_pull = [m for m in auto_pull_models if m not in installed_names]
                     
                     if to_pull:
                         console.print(f"[info]Auto-pulling {len(to_pull)} model(s)...[/]")

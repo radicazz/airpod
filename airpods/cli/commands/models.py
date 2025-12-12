@@ -12,11 +12,22 @@ from airpods.logging import console
 
 from ..common import COMMAND_CONTEXT, get_ollama_port
 from ..completions import model_name_completion
-from ..help import command_help_option, maybe_show_command_help
+from ..help import command_help_option, maybe_show_command_help, show_command_help
 from ..type_defs import CommandMap
 
 # Create sub-app for models command
-models_app = typer.Typer(help="Manage Ollama models", no_args_is_help=True)
+models_app = typer.Typer(help="Manage Ollama models", context_settings=COMMAND_CONTEXT)
+
+
+@models_app.callback(invoke_without_command=True)
+def _models_root(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+) -> None:
+    """Entry point for the models command group."""
+    maybe_show_command_help(ctx, help_)
+    if ctx.invoked_subcommand is None:
+        show_command_help(ctx)
 
 
 def ensure_ollama_running() -> int:

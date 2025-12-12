@@ -219,10 +219,9 @@ def get_ollama_port() -> int:
         Ollama port number (default: 11434)
     """
     # Find Ollama service in registry
-    for spec in config_module.REGISTRY:
-        if spec.name == "ollama":
-            if spec.ports and len(spec.ports) > 0:
-                return spec.ports[0].host
+    spec = config_module.REGISTRY.get("ollama")
+    if spec and spec.ports and len(spec.ports) > 0:
+        return spec.ports[0].host
     
     # Fallback to default
     return 11434
