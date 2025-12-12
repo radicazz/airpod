@@ -85,7 +85,6 @@ COMMAND_ALIASES = {
     "down": "stop",
     "ps": "status",
     "info": "status",
-    "model": "models",
 }
 
 ALIAS_HELP_TEMPLATE = "[alias]Alias for {canonical}[/]"
