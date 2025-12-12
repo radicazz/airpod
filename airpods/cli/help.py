@@ -108,7 +108,7 @@ def show_root_help(ctx: typer.Context) -> None:
     if disabled_rows:
         _append_section(
             renderables,
-            "Disabled (start required services to enable)",
+            "Disabled",
             _build_disabled_command_table(disabled_rows)
         )
     
