@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import Optional
 
 import typer
-from rich.table import Table
 
-from airpods import ollama
+from airpods import ollama, ui
 from airpods.logging import console
 
 from ..common import COMMAND_CONTEXT, get_ollama_port
@@ -75,11 +74,11 @@ def list_models_cmd(
             return
 
         # Create Rich table
-        table = Table(title="[info]Installed Models")
-        table.add_column("Model", style="cyan", no_wrap=True)
-        table.add_column("Size", style="dim", justify="right")
-        table.add_column("Modified", style="dim")
-        table.add_column("Family", style="dim")
+        table = ui.themed_table(title="[accent]Installed Models[/accent]")
+        table.add_column("Model", no_wrap=True)
+        table.add_column("Size", justify="right")
+        table.add_column("Modified")
+        table.add_column("Family")
 
         # Sort by modified date (newest first)
         sorted_models = sorted(
