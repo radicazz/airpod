@@ -23,7 +23,7 @@ from ..common import (
     manager,
     resolve_services,
 )
-from ..help import command_help_option, maybe_show_command_help
+from ..help import command_help_option, maybe_show_command_help, exit_with_help
 from ..type_defs import CommandMap
 
 
@@ -283,11 +283,12 @@ def register(app: typer.Typer) -> CommandMap:
             pods = volumes = images = network = configs = True
 
         if not any([pods, volumes, images, network, configs]):
-            console.print(
-                "[warn]No cleanup targets specified. Use --help to see options.[/]"
+            exit_with_help(
+                ctx,
+                message="No cleanup targets specified.",
+                show_help=False,
+                code=1,
             )
-            console.print("[info]Tip: Use --all to remove everything.[/]")
-            raise typer.Exit(code=1)
 
         ensure_podman_available()
 

@@ -10,6 +10,7 @@ from airpods.logging import console
 from airpods.runtime import ContainerRuntimeError
 
 from .commands import register as register_commands
+from .command_classes import AirpodsGroup
 from .common import (
     DEFAULT_LOG_LINES,
     DEFAULT_PING_TIMEOUT,
@@ -26,6 +27,7 @@ app = typer.Typer(
     help=__description__,
     context_settings={"help_option_names": []},
     rich_markup_mode="rich",
+    cls=AirpodsGroup,
 )
 
 register_commands(app)

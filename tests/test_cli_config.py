@@ -53,3 +53,12 @@ def test_config_set_rejects_invalid_values(runner):
     )
     assert result.exit_code != 0
     assert (home / "configs" / "config.toml").read_text() == before
+
+
+def test_config_get_missing_key_shows_help(runner):
+    result = runner.invoke(app, ["config", "get"])
+    combined = result.stdout or ""
+    assert result.exit_code != 0
+    assert "Missing argument" in combined
+    assert "Print a specific configuration value" in combined
+    assert "Arguments" in combined

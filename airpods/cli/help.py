@@ -93,6 +93,32 @@ def show_root_help(ctx: typer.Context) -> None:
     _render_help_panel(renderables)
 
 
+def show_help_for_context(ctx: typer.Context) -> None:
+    """Render the appropriate Rich help view for the given context."""
+    if ctx.parent is None:
+        show_root_help(ctx)
+    else:
+        show_command_help(ctx)
+
+
+def exit_with_help(
+    ctx: typer.Context,
+    *,
+    message: str | None = None,
+    tip: str | None = None,
+    show_help: bool = True,
+    code: int = 1,
+) -> None:
+    """Print an optional message/tip, show command help, then exit."""
+    if message:
+        console.print(f"[warn]{message}[/]")
+    if tip:
+        console.print(f"[info]{tip}[/]")
+    if show_help:
+        show_help_for_context(ctx)
+    raise typer.Exit(code=code)
+
+
 def build_help_table(
     ctx: typer.Context,
     rows: Iterable[tuple[str, ...]],

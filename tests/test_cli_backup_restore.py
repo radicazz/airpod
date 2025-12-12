@@ -87,6 +87,14 @@ def test_backup_creates_archive(
     assert archives
 
 
+def test_restore_without_archive_shows_help(runner, mock_podman):
+    result = runner.invoke(app, ["restore"])
+    combined = result.stdout or ""
+    assert result.exit_code != 0
+    assert "Missing argument" in combined or "ARCHIVE" in combined
+    assert "Restore configs, DB, and metadata" in combined
+
+
 def test_restore_missing_archive_errors(runner, mock_podman):
     result = runner.invoke(app, ["restore", "missing.tar.gz"])
     assert result.exit_code != 0

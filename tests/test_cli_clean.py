@@ -65,12 +65,13 @@ def mock_dirs(tmp_path):
         yield {"volumes": volumes, "configs": configs}
 
 
-def test_clean_no_options_shows_warning(mock_podman):
-    """Test that clean with no options shows a helpful warning."""
+def test_clean_no_options_shows_help(mock_podman):
+    """Test that clean with no options shows a warning without tip/help."""
     result = runner.invoke(app, ["clean"])
     assert result.exit_code == 1
     assert "No cleanup targets specified" in result.stdout
-    assert "Use --all to remove everything" in result.stdout
+    assert "Use --all to remove everything" not in result.stdout
+    assert "Remove volumes, images, configs, and user data" not in result.stdout
 
 
 def test_clean_help_shows_usage():
