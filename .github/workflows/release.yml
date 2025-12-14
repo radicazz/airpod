@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras
+
+      - name: Run tests
+        run: |
+          uv run pytest --cov=airpods --cov-report=term-missing
+
+      - name: Build package
+        run: |
+          uv build
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [ -z "$PREV_TAG" ]; then
+            # First release - get all commits
+            CHANGES=$(git log --pretty=format:"- %s (%h)" --reverse)
+          else
+            # Get commits since previous tag
+            CHANGES=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --reverse)
+          fi
+          
+          # Create changelog content
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## Changes in v${{ steps.version.outputs.VERSION }}
+          
+          ${CHANGES}
+          EOF
+          
+          # Save for release body
+          {
+            echo "CHANGELOG<<EOF"
+            echo "${CHANGES}"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## Installation
+            
+            Install directly from this release:
+            ```bash
+            # Using uv (recommended)
+            uv tool install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/airpods-${{ steps.version.outputs.VERSION }}-py3-none-any.whl
+            
+            # Or install from git tag
+            uv tool install git+https://github.com/${{ github.repository }}.git@${{ github.ref_name }}
+            ```
+            
+            ## Changes
+            
+            ${{ steps.changelog.outputs.CHANGELOG }}
+            
+            ## Full Changelog
+            
+            **Full Diff**: https://github.com/${{ github.repository }}/compare/${{ github.ref_name }}
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+          draft: false
+          prerelease: false
+          generate_release_notes: false
