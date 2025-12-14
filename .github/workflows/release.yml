@@ -47,7 +47,7 @@ jobs:
         run: |
           # Get the previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          
+
           if [ -z "$PREV_TAG" ]; then
             # First release - get all commits
             CHANGES=$(git log --pretty=format:"- %s (%h)" --reverse)
@@ -55,14 +55,14 @@ jobs:
             # Get commits since previous tag
             CHANGES=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --reverse)
           fi
-          
+
           # Create changelog content
           cat >> $GITHUB_STEP_SUMMARY << EOF
           ## Changes in v${{ steps.version.outputs.VERSION }}
-          
+
           ${CHANGES}
           EOF
-          
+
           # Save for release body
           {
             echo "CHANGELOG<<EOF"
@@ -76,22 +76,22 @@ jobs:
           name: Release v${{ steps.version.outputs.VERSION }}
           body: |
             ## Installation
-            
+
             Install directly from this release:
             ```bash
             # Using uv (recommended)
             uv tool install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/airpods-${{ steps.version.outputs.VERSION }}-py3-none-any.whl
-            
+
             # Or install from git tag
             uv tool install git+https://github.com/${{ github.repository }}.git@${{ github.ref_name }}
             ```
-            
+
             ## Changes
-            
+
             ${{ steps.changelog.outputs.CHANGELOG }}
-            
+
             ## Full Changelog
-            
+
             **Full Diff**: https://github.com/${{ github.repository }}/compare/${{ github.ref_name }}
           files: |
             dist/*.whl

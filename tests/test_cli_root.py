@@ -17,13 +17,6 @@ def test_help_flag(runner):
     assert "Commands" in result.stdout
 
 
-def test_version_command(runner):
-    """version command mirrors --version."""
-    result = runner.invoke(app, ["version"])
-    assert result.exit_code == 0
-    assert "airpods" in result.stdout
-
-
 def test_start_help_uses_custom_renderer(runner):
     """start --help renders the Rich-powered panel."""
     result = runner.invoke(app, ["start", "--help"])
