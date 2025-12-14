@@ -26,9 +26,11 @@ from .common import COMMAND_ALIASES, HELP_OPTION_NAMES, check_service_availabili
 # Map commands to their required services
 COMMAND_DEPENDENCIES = {
     "models": "ollama",
-    # Future: add more as needed
-    # "backup": "any",  # requires any service running
-    # "restore": "any",
+    "logs": "any",
+    "stop": "any",
+    "status": "any",
+    "backup": "any",
+    "restore": "any",
 }
 
 
@@ -109,7 +111,7 @@ def show_root_help(ctx: typer.Context) -> None:
     # Show disabled commands if any
     if disabled_rows:
         _append_section(
-            renderables, "Disabled", _build_disabled_command_table(disabled_rows)
+            renderables, "Unavailable", _build_disabled_command_table(disabled_rows)
         )
 
     _append_section(renderables, "Options", build_option_table(ctx))

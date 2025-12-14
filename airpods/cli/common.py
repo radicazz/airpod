@@ -234,12 +234,25 @@ def check_service_availability(service_name: str) -> tuple[bool, str]:
 
     Args:
         service_name: Name of the service to check (e.g., "ollama")
+                     Special value "any" checks if any services are running
 
     Returns:
         Tuple of (is_available, reason_if_not)
         - (True, "") if service is available
         - (False, "reason") if service is not available
     """
+    # Handle special "any" case - check if any services are running
+    if service_name == "any":
+        try:
+            pod_rows = manager.pod_status_rows() or {}
+            # Check if any pod is running
+            for row in pod_rows.values():
+                if row.get("Status", "") == "Running":
+                    return True, ""
+            return False, "no services running"
+        except Exception:
+            return False, "no services running"
+
     # Check if service is in the registry (enabled in config)
     spec = config_module.REGISTRY.get(service_name)
     if not spec:
