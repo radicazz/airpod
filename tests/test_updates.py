@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import json
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from airpods import __version__
+from airpods.state import clear_state_root_override, set_state_root
+from airpods.updates import (
+    InstallSource,
+    ReleaseInfo,
+    check_for_update,
+    detect_install_source,
+    format_upgrade_hint,
+    is_update_available,
+)
+
+
+def test_is_update_available_compares_versions():
+    newer = ReleaseInfo(tag="v999.0.0", version="999.0.0", html_url="")
+    assert is_update_available(newer) is True
+
+    same = ReleaseInfo(tag=f"v{__version__}", version=__version__, html_url="")
+    assert is_update_available(same) is False
+
+
+def test_format_upgrade_hint_varies_by_channel():
+    latest = ReleaseInfo(tag="v9.9.9", version="9.9.9", html_url="")
+
+    nightly = format_upgrade_hint(
+        latest, InstallSource(kind="nightly", revision="main")
+    )
+    assert "uv tool upgrade airpods" in nightly
+
+    stable = format_upgrade_hint(latest, InstallSource(kind="tag", revision="v0.0.1"))
+    assert "git+https://github.com/radicazz/airpods.git@v9.9.9" in stable
+
+
+def test_check_for_update_uses_cache(tmp_path):
+    set_state_root(tmp_path)
+    try:
+        latest = ReleaseInfo(tag="v1.2.3", version="1.2.3", html_url="x")
+
+        with patch(
+            "airpods.updates.fetch_latest_release", return_value=latest
+        ) as fetch:
+            first = check_for_update(force=True, interactive_only=False)
+            assert first == latest
+            assert fetch.call_count == 1
+
+        # Ensure cache file exists and subsequent call can read it without fetching.
+        cache_path = tmp_path / "configs" / "update_check.json"
+        assert cache_path.exists()
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        assert cached["tag"] == "v1.2.3"
+
+        with patch("airpods.updates.fetch_latest_release") as fetch2:
+            second = check_for_update(force=False, interactive_only=False)
+            assert second == latest
+            fetch2.assert_not_called()
+    finally:
+        clear_state_root_override()
+
+
+def test_detect_install_source_reads_direct_url_metadata():
+    def _fake_distribution(_name: str):
+        direct_url = {
+            "vcs_info": {
+                "requested_revision": "main",
+                "commit_id": "deadbeef",
+            }
+        }
+        return SimpleNamespace(
+            read_text=lambda path: json.dumps(direct_url)
+            if path == "direct_url.json"
+            else None
+        )
+
+    with patch("importlib.metadata.distribution", _fake_distribution):
+        src = detect_install_source()
+        assert src.kind == "nightly"

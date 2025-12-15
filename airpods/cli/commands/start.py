@@ -19,6 +19,7 @@ from rich.progress import (
 )
 
 from airpods import ui
+from airpods import __version__
 from airpods.logging import console, status_spinner
 from airpods.system import detect_gpu, detect_cuda_compute_capability
 from airpods.cuda import select_cuda_version, get_cuda_info_display
@@ -277,6 +278,24 @@ def register(app: typer.Typer) -> CommandMap:
             console.print(
                 "[dim]Tip: Use 'airpods status' to check readiness and URLs, or 'airpods logs <service>' to watch startup.[/dim]"
             )
+
+            try:
+                from airpods.updates import (
+                    check_for_update,
+                    detect_install_source,
+                    format_upgrade_hint,
+                    is_update_available,
+                )
+
+                latest = check_for_update(timeout_seconds=0.8)
+                if latest and is_update_available(latest):
+                    hint = format_upgrade_hint(latest, detect_install_source())
+                    console.print(
+                        f"[warn]Update available:[/] {latest.tag} (installed: v{__version__})"
+                    )
+                    console.print(f"[dim]{hint}[/dim]")
+            except Exception:
+                pass
             return
 
         # Wait for health checks with timeout

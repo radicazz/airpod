@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import typer
 
-from airpods import ui
+from airpods import __version__, ui
 from airpods.logging import console
 from airpods.system import detect_cuda_compute_capability, detect_dns_servers
+from airpods.updates import (
+    check_for_update,
+    detect_install_source,
+    format_upgrade_hint,
+    is_update_available,
+)
 from airpods.cuda import select_cuda_version, get_cuda_info_display
 
 from ..common import COMMAND_CONTEXT, DOCTOR_REMEDIATIONS, manager
@@ -52,6 +58,14 @@ def register(app: typer.Typer) -> CommandMap:
             console.print(
                 "[dim]Tip: If containers can't reach the internet, recreate the network with 'airpods start --reset-network' (or 'airpods clean --network').[/dim]"
             )
+
+        latest = check_for_update()
+        if latest and is_update_available(latest):
+            hint = format_upgrade_hint(latest, detect_install_source())
+            console.print(
+                f"[warn]Update available:[/] {latest.tag} (installed: v{__version__})"
+            )
+            console.print(f"[dim]{hint}[/dim]")
 
         if report.missing:
             console.print("[error]Missing dependencies detected:[/]")
