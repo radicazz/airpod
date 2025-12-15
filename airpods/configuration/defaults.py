@@ -80,6 +80,10 @@ DEFAULT_CONFIG_DICT = {
             "health": {"path": "/", "expected_status": [200, 399]},
             "env": {
                 "OLLAMA_BASE_URL": "http://ollama:{{services.ollama.ports.0.container}}",
+                # Avoid accidental calls to api.openai.com by default; point any OpenAI-compatible
+                # connection to the local Ollama OpenAI-compatible endpoint instead.
+                "OPENAI_API_BASE_URL": "http://ollama:{{services.ollama.ports.0.container}}/v1",
+                "OPENAI_API_KEY": "ollama",
                 "ENABLE_COMMUNITY_SHARING": "True",
             },
             "resources": {},

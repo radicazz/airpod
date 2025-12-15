@@ -81,6 +81,9 @@ def test_template_resolver_handles_mixed_runtime_and_service_refs():
     config_dict["services"]["open-webui"]["env"]["OLLAMA_BASE_URL"] = (
         "http://{{runtime.host_gateway}}:{{services.ollama.ports.0.host}}"
     )
+    config_dict["services"]["open-webui"]["env"]["OPENAI_API_BASE_URL"] = (
+        "http://{{runtime.host_gateway}}:{{services.ollama.ports.0.host}}/v1"
+    )
     config_dict["services"]["ollama"]["env"]["PUBLIC_URL"] = (
         "http://localhost:{{services.open-webui.ports.0.host}}"
     )
@@ -92,4 +95,19 @@ def test_template_resolver_handles_mixed_runtime_and_service_refs():
         resolved.services["open-webui"].env["OLLAMA_BASE_URL"]
         == "http://gateway.local:11434"
     )
+    assert (
+        resolved.services["open-webui"].env["OPENAI_API_BASE_URL"]
+        == "http://gateway.local:11434/v1"
+    )
     assert resolved.services["ollama"].env["PUBLIC_URL"] == "http://localhost:3000"
+
+
+def test_defaults_point_openai_base_url_to_ollama():
+    config = AirpodsConfig.from_dict(deepcopy(DEFAULT_CONFIG_DICT))
+    resolved = resolve_templates(config)
+
+    assert (
+        resolved.services["open-webui"].env["OPENAI_API_BASE_URL"]
+        == "http://ollama:11434/v1"
+    )
+    assert resolved.services["open-webui"].env["OPENAI_API_KEY"] == "ollama"
