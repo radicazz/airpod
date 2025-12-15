@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import ANY, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -36,25 +36,15 @@ def _make_mock_spec() -> ServiceSpec:
     )
 
 
-def _mock_service_ready(mock_manager):
-    mock_manager.pod_status_rows.side_effect = [
-        {},
-        {"pod": {"Status": "Running"}},
-        {"pod": {"Status": "Running"}},
-    ]
-    mock_manager.container_exists.return_value = False
-    mock_manager.service_ports.return_value = {"11434/tcp": [{"HostPort": "11434"}]}
-
-
 @patch("airpods.cli.commands.start.manager")
+@patch("airpods.cli.commands.start._pull_images_with_progress")
 @patch("airpods.cli.commands.start.get_cli_config")
 @patch("airpods.cli.commands.start.ensure_podman_available")
 @patch("airpods.cli.commands.start.resolve_services")
 def test_start_respects_configured_concurrency(
-    mock_resolve, mock_ensure, mock_get_cli_config, mock_manager, runner
+    mock_resolve, mock_ensure, mock_get_cli_config, mock_pull, mock_manager, runner
 ):
     mock_resolve.return_value = [_make_mock_spec()]
-    _mock_service_ready(mock_manager)
     mock_get_cli_config.return_value = type(
         "Config",
         (),
@@ -66,27 +56,26 @@ def test_start_respects_configured_concurrency(
     )
     mock_manager.ensure_network.return_value = False
     mock_manager.ensure_volumes.return_value = []
-    mock_manager.pull_images.return_value = None
+    mock_manager.pod_status_rows.return_value = {}
+    mock_manager.container_exists.return_value = False
 
-    result = runner.invoke(app, ["-V", "start"])
+    result = runner.invoke(app, ["start"])
 
     assert result.exit_code == 0
-    mock_manager.pull_images.assert_any_call(
-        mock_resolve.return_value,
-        progress_callback=ANY,
-        max_concurrent=5,
+    mock_pull.assert_called_once_with(
+        mock_resolve.return_value, max_concurrent=5, verbose=False
     )
 
 
 @patch("airpods.cli.commands.start.manager")
+@patch("airpods.cli.commands.start._pull_images_with_progress")
 @patch("airpods.cli.commands.start.get_cli_config")
 @patch("airpods.cli.commands.start.ensure_podman_available")
 @patch("airpods.cli.commands.start.resolve_services")
 def test_start_sequential_flag_forces_single_pull(
-    mock_resolve, mock_ensure, mock_get_cli_config, mock_manager, runner
+    mock_resolve, mock_ensure, mock_get_cli_config, mock_pull, mock_manager, runner
 ):
     mock_resolve.return_value = [_make_mock_spec()]
-    _mock_service_ready(mock_manager)
     mock_get_cli_config.return_value = type(
         "Config",
         (),
@@ -98,20 +87,19 @@ def test_start_sequential_flag_forces_single_pull(
     )
     mock_manager.ensure_network.return_value = False
     mock_manager.ensure_volumes.return_value = []
-    mock_manager.pull_images.return_value = None
+    mock_manager.pod_status_rows.return_value = {}
+    mock_manager.container_exists.return_value = False
 
     result = runner.invoke(app, ["-V", "start", "--sequential"])
 
     assert result.exit_code == 0
-    mock_manager.pull_images.assert_any_call(
-        mock_resolve.return_value,
-        progress_callback=ANY,
-        max_concurrent=1,
+    mock_pull.assert_called_once_with(
+        mock_resolve.return_value, max_concurrent=1, verbose=True
     )
 
 
 @patch("airpods.cli.commands.start.manager")
-@patch("airpods.cli.commands.start._pull_images_only")
+@patch("airpods.cli.commands.start._pull_images_with_progress")
 @patch("airpods.cli.commands.start.get_cli_config")
 @patch("airpods.cli.commands.start.ensure_podman_available")
 @patch("airpods.cli.commands.start.resolve_services")
@@ -132,7 +120,7 @@ def test_pre_fetch_only_mode(
 
 
 @patch("airpods.cli.commands.start.manager")
-@patch("airpods.cli.commands.start._pull_images_only")
+@patch("airpods.cli.commands.start._pull_images_with_progress")
 @patch("airpods.cli.commands.start.get_cli_config")
 @patch("airpods.cli.commands.start.ensure_podman_available")
 @patch("airpods.cli.commands.start.resolve_services")
@@ -141,7 +129,6 @@ def test_start_non_verbose_uses_pull_ui(
 ):
     spec = _make_mock_spec()
     mock_resolve.return_value = [spec]
-    _mock_service_ready(mock_manager)
     mock_get_cli_config.return_value = type(
         "Config",
         (),
@@ -153,8 +140,10 @@ def test_start_non_verbose_uses_pull_ui(
     )
     mock_manager.ensure_network.return_value = False
     mock_manager.ensure_volumes.return_value = []
+    mock_manager.pod_status_rows.return_value = {}
+    mock_manager.container_exists.return_value = False
 
     result = runner.invoke(app, ["start"])
 
     assert result.exit_code == 0
-    mock_pull_only.assert_called_once_with([spec], max_concurrent=5)
+    mock_pull_only.assert_called_once_with([spec], max_concurrent=5, verbose=False)

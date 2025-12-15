@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import queue
+import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Optional
 
 import typer
-from rich.live import Live
-from rich.spinner import Spinner
-from rich.table import Table
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
-from airpods import ui
 from airpods.logging import console, status_spinner
 from airpods.system import detect_gpu, detect_cuda_compute_capability
 from airpods.cuda import select_cuda_version, get_cuda_info_display
@@ -57,6 +64,11 @@ def register(app: typer.Typer) -> CommandMap:
             False,
             "--pre-fetch",
             help="Download service images without starting containers.",
+        ),
+        wait: bool = typer.Option(
+            False,
+            "--wait",
+            help="Wait for HTTP health checks before returning (may take a while for some services).",
         ),
     ) -> None:
         """Start pods for specified services."""
@@ -105,7 +117,7 @@ def register(app: typer.Typer) -> CommandMap:
         max_concurrent_pulls = 1 if sequential else cli_config.max_concurrent_pulls
 
         if pre_fetch:
-            _pull_images_only(specs, max_concurrent=max_concurrent_pulls)
+            _pull_images_with_progress(specs, max_concurrent=max_concurrent_pulls)
             return
 
         if not specs:
@@ -196,37 +208,10 @@ def register(app: typer.Typer) -> CommandMap:
         failed_services = []
         timeout_services = []
 
-        # Pull images with simple logging
-        def _image_progress(phase, index, _total_count, spec):
-            if phase == "start":
-                if verbose:
-                    console.print(f"Pulling [accent]{spec.image}[/]...")
-            else:
-                if verbose:
-                    elapsed = time.perf_counter() - pull_start_times.get(spec.name, 0)
-                    size = manager.runtime.image_size(spec.image)
-                    transfer = format_transfer_label(size, elapsed)
-                    if transfer:
-                        console.print(f"[ok]✓[/] Pulled {spec.name} ({transfer})")
-                    else:
-                        console.print(f"[ok]✓[/] Pulled {spec.name}")
-
-        if verbose:
-            pull_start_times: dict[str, float] = {}
-
-            def _track_pull_start(phase, index, _total_count, spec):
-                if phase == "start":
-                    pull_start_times[spec.name] = time.perf_counter()
-                _image_progress(phase, index, _total_count, spec)
-
-            manager.pull_images(
-                specs_to_start,
-                progress_callback=_track_pull_start,
-                max_concurrent=max_concurrent_pulls,
-            )
-        else:
-            # Non-verbose mode still shows progress so long pulls don't feel like a hang.
-            _pull_images_only(specs_to_start, max_concurrent=max_concurrent_pulls)
+        # Pull images with live progress so long pulls don't feel like a hang.
+        _pull_images_with_progress(
+            specs_to_start, max_concurrent=max_concurrent_pulls, verbose=verbose
+        )
 
         # Start services with simple logging
         for spec in specs_to_start:
@@ -243,6 +228,26 @@ def register(app: typer.Typer) -> CommandMap:
                 console.print(f"[error]✗ Failed to start {spec.name}: {e}[/]")
                 failed_services.append(spec.name)
                 continue
+
+        # If we're not waiting for readiness, return after pods are launched.
+        if not wait:
+            started = [
+                spec.name for spec in specs_to_start if spec.name not in failed_services
+            ]
+            if started:
+                console.print(
+                    f"[ok]✓ Launched {len(started)} service{'s' if len(started) != 1 else ''}: {', '.join(started)}[/]"
+                )
+            if failed_services:
+                console.print(
+                    f"[error]✗ Failed services: {', '.join(failed_services)}. "
+                    "Check logs with 'airpods logs'[/]"
+                )
+                raise typer.Exit(code=1)
+            console.print(
+                "[dim]Tip: Use 'airpods status' to check readiness and URLs, or 'airpods logs <service>' to watch startup.[/dim]"
+            )
+            return
 
         # Wait for health checks with timeout
         start_time = time.time()
@@ -435,57 +440,141 @@ def register(app: typer.Typer) -> CommandMap:
     return {"start": start}
 
 
-def _pull_images_only(specs: list[ServiceSpec], max_concurrent: int) -> None:
+@dataclass(frozen=True)
+class _PullEvent:
+    kind: str
+    task_id: int
+    payload: str = ""
+
+
+def _pull_images_with_progress(
+    specs: list[ServiceSpec], *, max_concurrent: int, verbose: bool = False
+) -> None:
     if not specs:
         console.print("[warn]No services enabled; nothing to initialize.[/]")
         return
 
-    image_states: dict[str, str] = {spec.name: "pending" for spec in specs}
-    image_transfers: dict[str, str] = {}
-    image_start_times: dict[str, float] = {}
+    events: queue.Queue[_PullEvent] = queue.Queue()
+    max_workers = max(1, max_concurrent)
 
-    def _make_table() -> Table:
-        table = ui.themed_table(title="[info]Pulling Images")
-        table.add_column("Service", style="cyan")
-        table.add_column("Image", style="dim")
-        table.add_column("Transfer", style="dim", justify="right")
-        table.add_column("Status", style="")
+    def _iter_pull_lines(stream: str):
+        # Podman may emit carriage-return progress; normalize to line events.
+        for chunk in stream.splitlines():
+            for part in chunk.split("\r"):
+                line = part.strip()
+                if line:
+                    yield line
+
+    def _pull_one(spec: ServiceSpec, task_id: int) -> None:
+        start = time.perf_counter()
+        events.put(_PullEvent("start", task_id))
+        try:
+            proc = subprocess.Popen(
+                ["podman", "pull", spec.image],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except OSError as exc:
+            events.put(_PullEvent("error", task_id, str(exc)))
+            return
+        output: list[str] = []
+        try:
+            assert proc.stdout is not None
+            for raw in proc.stdout:
+                output.append(raw)
+                for line in _iter_pull_lines(raw):
+                    events.put(_PullEvent("line", task_id, line))
+        finally:
+            rc = proc.wait()
+
+        if rc != 0:
+            detail = "".join(output).strip()
+            events.put(_PullEvent("error", task_id, detail))
+            return
+
+        elapsed = time.perf_counter() - start
+        size = manager.runtime.image_size(spec.image)
+        transfer = format_transfer_label(size, elapsed) or f"{elapsed:.1f}s"
+        events.put(_PullEvent("done", task_id, transfer))
+
+    title = "[info]Pulling Images"
+    if verbose:
+        title = "[info]Pulling Images (live)"
+
+    with Progress(
+        SpinnerColumn(style="accent"),
+        TextColumn("{task.fields[service]}", style="cyan", justify="right"),
+        BarColumn(bar_width=None),
+        TextColumn("{task.fields[status]}", style="muted", markup=True),
+        TextColumn("{task.fields[transfer]}", style="dim", justify="right"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        tasks: dict[int, ServiceSpec] = {}
+        task_ids: dict[str, int] = {}
 
         for spec in specs:
-            state_val = image_states[spec.name]
-            transfer = image_transfers.get(spec.name, "")
-            if state_val == "pending":
-                table.add_row(spec.name, spec.image, transfer, "[dim]Waiting...")
-            elif state_val == "pulling":
-                spinner = Spinner("dots", style="info")
-                table.add_row(spec.name, spec.image, transfer, spinner)
-            elif state_val == "done":
-                table.add_row(spec.name, spec.image, transfer, "[ok]✓ Ready")
+            task_id = progress.add_task(
+                title,
+                total=None,
+                service=spec.name,
+                status="Waiting…",
+                transfer="",
+            )
+            tasks[task_id] = spec
+            task_ids[spec.name] = task_id
 
-        return table
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(_pull_one, spec, task_ids[spec.name]) for spec in specs
+            ]
 
-    with Live(
-        _make_table(), refresh_per_second=4, console=console, transient=True
-    ) as live:
+            failures: list[tuple[str, str]] = []
+            done_count = 0
+            while done_count < len(specs):
+                try:
+                    event = events.get(timeout=0.1)
+                except queue.Empty:
+                    continue
 
-        def _image_progress(phase, index, _total_count, spec):
-            if phase == "start":
-                image_states[spec.name] = "pulling"
-                image_start_times[spec.name] = time.perf_counter()
-                image_transfers[spec.name] = "[dim]estimating..."
-            else:
-                image_states[spec.name] = "done"
-                elapsed = time.perf_counter() - image_start_times.pop(
-                    spec.name, time.perf_counter()
-                )
-                size = manager.runtime.image_size(spec.image)
-                transfer = format_transfer_label(size, elapsed)
-                image_transfers[spec.name] = transfer or f"{elapsed:.1f}s"
-            live.update(_make_table())
+                if event.kind == "start":
+                    progress.update(event.task_id, status="Pulling…", transfer="")
+                elif event.kind == "line":
+                    # Keep status compact; podman emits a lot of noise.
+                    line = event.payload
+                    if len(line) > 80:
+                        line = f"{line[:77]}…"
+                    progress.update(event.task_id, status=line)
+                elif event.kind == "done":
+                    progress.update(
+                        event.task_id,
+                        status="[ok]✓ Ready[/]",
+                        transfer=event.payload,
+                        total=1,
+                        completed=1,
+                    )
+                    done_count += 1
+                elif event.kind == "error":
+                    spec = tasks.get(event.task_id)
+                    failures.append((spec.name if spec else "unknown", event.payload))
+                    progress.update(
+                        event.task_id,
+                        status="[error]✗ Failed[/]",
+                        transfer="",
+                        total=1,
+                        completed=1,
+                    )
+                    done_count += 1
 
-        manager.pull_images(
-            specs,
-            progress_callback=_image_progress,
-            max_concurrent=max_concurrent,
-        )
-        live.update(_make_table())
+            for future in futures:
+                future.result()
+
+        if failures:
+            if verbose:
+                for name, detail in failures:
+                    if detail:
+                        console.print(f"[error]{name} pull error:[/] {detail}")
+            console.print("[error]✗ Failed to pull one or more images[/]")
+            raise typer.Exit(code=1)
