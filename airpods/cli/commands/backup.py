@@ -484,10 +484,10 @@ def register(app: typer.Typer) -> CommandMap:
     @app.command(context_settings=COMMAND_CONTEXT)
     def restore(
         ctx: typer.Context,
+        help_: bool = command_help_option(),
         archive: Path = typer.Argument(
             ..., help="Path to a backup archive created by airpods."
         ),
-        help_: bool = command_help_option(),
         backup_existing: bool = typer.Option(
             True,
             "--backup-existing/--no-backup-existing",

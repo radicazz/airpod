@@ -143,6 +143,7 @@ def _detect_model_source(model_spec: str) -> str:
 @models_app.command(name="pull", context_settings=COMMAND_CONTEXT)
 def pull_model_cmd(
     ctx: typer.Context,
+    help_: bool = command_help_option(),
     model: str = typer.Argument(
         ...,
         help="Model name or repo (e.g., llama3.2, qwen2.5:7b, bartowski/Llama-3.2-3B-Instruct-GGUF)",
@@ -153,7 +154,6 @@ def pull_model_cmd(
     name: Optional[str] = typer.Option(
         None, "--name", "-n", help="Model name in Ollama (for HuggingFace repos)"
     ),
-    help_: bool = command_help_option(),
 ) -> None:
     """Pull a model from Ollama library or HuggingFace (auto-detected)."""
 
@@ -345,11 +345,11 @@ def _pull_from_huggingface(
 @models_app.command(name="remove", context_settings=COMMAND_CONTEXT)
 def remove_model_cmd(
     ctx: typer.Context,
+    help_: bool = command_help_option(),
     model: str = typer.Argument(
         ..., help="Model name to remove", shell_complete=model_name_completion
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
-    help_: bool = command_help_option(),
 ) -> None:
     """Remove an installed model."""
 
@@ -382,10 +382,10 @@ def remove_model_cmd(
 @models_app.command(name="info", context_settings=COMMAND_CONTEXT)
 def info_model_cmd(
     ctx: typer.Context,
+    help_: bool = command_help_option(),
     model: str = typer.Argument(
         ..., help="Model name", shell_complete=model_name_completion
     ),
-    help_: bool = command_help_option(),
 ) -> None:
     """Show detailed information about a model."""
 
