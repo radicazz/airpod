@@ -13,6 +13,61 @@ class CheckResult:
     detail: str = ""
 
 
+def detect_dns_servers() -> List[str]:
+    """Return DNS servers that containers can use.
+
+    Prefers non-loopback nameservers from resolv.conf. If the system uses
+    a local stub resolver (e.g., systemd-resolved at 127.0.0.53), attempts
+    to read a non-stub resolv.conf before falling back to public DNS.
+    """
+    import ipaddress
+    from pathlib import Path
+
+    def _from_resolv(path: Path) -> List[str]:
+        servers: list[str] = []
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return servers
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not line.startswith("nameserver "):
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            candidate = parts[1].strip()
+            try:
+                ip = ipaddress.ip_address(candidate)
+            except ValueError:
+                continue
+            if ip.is_loopback:
+                continue
+            if candidate not in servers:
+                servers.append(candidate)
+        return servers
+
+    primary = Path("/etc/resolv.conf")
+    servers = _from_resolv(primary)
+    if servers:
+        return servers
+
+    # Common non-stub resolv.conf locations on Linux.
+    for candidate in (
+        Path("/run/systemd/resolve/resolv.conf"),
+        Path("/run/NetworkManager/no-stub-resolv.conf"),
+    ):
+        servers = _from_resolv(candidate)
+        if servers:
+            return servers
+
+    # Last resort: public resolvers. Users on restricted networks should
+    # override runtime.network.dns_servers in config.toml.
+    return ["1.1.1.1", "8.8.8.8"]
+
+
 def _run_command(args: List[str]) -> Tuple[bool, str]:
     try:
         proc = subprocess.run(

@@ -18,6 +18,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+from airpods import ui
 from airpods.logging import console, status_spinner
 from airpods.system import detect_gpu, detect_cuda_compute_capability
 from airpods.cuda import select_cuda_version, get_cuda_info_display
@@ -69,6 +70,11 @@ def register(app: typer.Typer) -> CommandMap:
             False,
             "--wait",
             help="Wait for HTTP health checks before returning (may take a while for some services).",
+        ),
+        reset_network: bool = typer.Option(
+            False,
+            "--reset-network",
+            help="Recreate the airpods network before starting (fixes some DNS/internet issues).",
         ),
     ) -> None:
         """Start pods for specified services."""
@@ -182,6 +188,30 @@ def register(app: typer.Typer) -> CommandMap:
                 console.print(f"CUDA: [muted]{cuda_info}[/]")
 
         # Only ensure network/volumes if we're actually starting something
+        if reset_network:
+            running = [
+                row.get("Name")
+                for row in (manager.pod_status_rows() or {}).values()
+                if row.get("Status") == "Running"
+            ]
+            if running:
+                console.print(
+                    "[error]Cannot reset network while pods are running.[/]\n"
+                    "[dim]Tip: Run 'airpods stop' first, or use 'airpods clean --network'.[/dim]"
+                )
+                raise typer.Exit(code=1)
+
+            if not cli_config.auto_confirm:
+                if not ui.confirm_action(
+                    f"Recreate network '{manager.network_name}'?", default=False
+                ):
+                    console.print("[warn]Network reset cancelled by user.[/]")
+                    raise typer.Exit(code=1)
+
+            with status_spinner("Resetting network"):
+                if manager.runtime.network_exists(manager.network_name):
+                    manager.runtime.remove_network(manager.network_name)
+
         with status_spinner("Ensuring network"):
             network_created = manager.ensure_network()
         print_network_status(network_created, manager.network_name, verbose=verbose)

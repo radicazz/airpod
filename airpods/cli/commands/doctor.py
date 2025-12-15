@@ -6,7 +6,7 @@ import typer
 
 from airpods import ui
 from airpods.logging import console
-from airpods.system import detect_cuda_compute_capability
+from airpods.system import detect_cuda_compute_capability, detect_dns_servers
 from airpods.cuda import select_cuda_version, get_cuda_info_display
 
 from ..common import COMMAND_CONTEXT, DOCTOR_REMEDIATIONS, manager
@@ -39,6 +39,19 @@ def register(app: typer.Typer) -> CommandMap:
                 has_gpu_cap, gpu_name_cap, compute_cap, "cu126"
             )
             console.print(f"CUDA: [muted]{cuda_info}[/]")
+
+        # Networking hints (common cause of HuggingFace/Ollama download failures)
+        effective_dns = manager.network_dns_servers or detect_dns_servers()
+        dns_label = ", ".join(effective_dns) if effective_dns else "none"
+        console.print(f"Network DNS: [accent]{dns_label}[/]")
+        if manager.network_dns_servers == []:
+            console.print(
+                "[dim]Tip: Set 'runtime.network.dns_servers' in config.toml if you're on a restricted/corporate network.[/dim]"
+            )
+        if manager.runtime.network_exists(manager.network_name):
+            console.print(
+                "[dim]Tip: If containers can't reach the internet, recreate the network with 'airpods start --reset-network' (or 'airpods clean --network').[/dim]"
+            )
 
         if report.missing:
             console.print("[error]Missing dependencies detected:[/]")

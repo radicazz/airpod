@@ -18,7 +18,7 @@ from typing import (
 
 from airpods import state
 from airpods.runtime import ContainerRuntime, ContainerRuntimeError
-from airpods.system import CheckResult, check_dependency, detect_gpu
+from airpods.system import CheckResult, check_dependency, detect_dns_servers, detect_gpu
 
 
 class UnknownServiceError(ValueError):
@@ -200,12 +200,13 @@ class ServiceManager:
     # ----------------------------------------------------------------------------------
     def ensure_network(self) -> bool:
         """Create the shared pod network if it doesn't exist."""
+        dns_servers = self.network_dns_servers or detect_dns_servers()
         return self.runtime.ensure_network(
             self.network_name,
             driver=self.network_driver,
             subnet=self.network_subnet,
             gateway=self.network_gateway,
-            dns_servers=self.network_dns_servers,
+            dns_servers=dns_servers,
             ipv6=self.network_ipv6,
             internal=self.network_internal,
         )
