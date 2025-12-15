@@ -2,61 +2,55 @@
 
 [![Tests](https://github.com/radicazz/airpods/actions/workflows/test.yml/badge.svg)](https://github.com/radicazz/airpods/actions/workflows/test.yml) [![Coverage](https://codecov.io/gh/radicazz/airpods/graph/badge.svg)](https://codecov.io/gh/radicazz/airpods)
 
-User-friendly CLI for orchestrating local AI services with Podman.
+Run the best free & open-source AI tools from the command-line with ease. This project currently supports the following services:
 
-## Prerequisites
+- [Ollama](https://github.com/ollama/ollama)
+- [Open WebUI](https://github.com/open-webui/open-webui)
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 
-- `uv`: Python environment & dependency manager
-- `podman` & `podman-compose`: Container runtime
-- *(optional)* `nvidia-smi`: GPU support
+## Get Started
 
-## Installation
+### Prerequisites
 
-```bash
-git clone https://github.com/radicazz/airpods.git && cd airpods
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/): Install, upgrade & manage `airpods`
+- `podman` + `podman-compose`: Run the service containers
 
-# Local (project folder) installation
-uv venv && source .venv/bin/activate
-uv pip install -e . '.[dev]'
+### Installation
 
-# Global installation (from a local checkout)
-uv tool install --from . airpods
-```
-
-### Install with `uv tool` (recommended)
-
-Stable (pin to a release tag):
-
-```bash
-uv tool install "git+https://github.com/radicazz/airpods.git@vX.Y.Z"
-```
-
-Nightly (track `main`):
+Install `airpods` with `uv`:
 
 ```bash
 uv tool install "git+https://github.com/radicazz/airpods.git@main"
 ```
 
-Upgrading:
+> [!IMPORTANT]
+> Upgrade your installation with `uv tool upgrade airpods` when a new version is available.
 
-- Nightly: `uv tool upgrade airpods`
-- Stable: install the new tag, e.g. `uv tool install --upgrade "git+https://github.com/radicazz/airpods.git@vX.Y.Z"`
+### First Steps
 
-## Quick Start
+Easily setup & run your favourite services:
 
 ```bash
-# (Optional) prefetch images
-airpods start --pre-fetch
-
-# Start services
-airpods start
-
-# Check status
-airpods status
-
-# Stop services
-airpods stop
+airpods start                       # Runs all available services
+airpods start ollama open-webui     # Run specific services
 ```
+
+View important info about your running services:
+
+```bash
+airpods status                      # Get the status of every running service
+airpods logs ollama                 # View ollama's latest logs
+airpods logs open-webui -f          # Follow open-webui's logs in your terminal
+```
+
+Stop your services:
+
+```bash
+airpods stop                        # Stop all running services
+airpods stop comfyui                # Only stop ComfyUI (if running)
+```
+
+---
 
 Run `airpods --help` for all available commands and options.
 
