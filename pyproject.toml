@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "airpods"
-version = "0.12.2"
+version = "0.13.0"
 description = "Rich, user-friendly CLI for orchestrating local AI services with Podman."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"

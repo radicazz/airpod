@@ -458,6 +458,135 @@ def info_model_cmd(
         raise typer.Exit(1)
 
 
+@models_app.command(name="search", context_settings=COMMAND_CONTEXT)
+def search_models_cmd(
+    ctx: typer.Context,
+    query: Optional[str] = typer.Argument(
+        None, help="Search query (model name or keywords)"
+    ),
+    limit: int = typer.Option(5, "--limit", "-l", help="Maximum results per source"),
+    source: Optional[str] = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Search only specific source (ollama or huggingface)",
+    ),
+    help_: bool = command_help_option(),
+) -> None:
+    """Search for models in Ollama library and HuggingFace."""
+
+    maybe_show_command_help(ctx, help_)
+
+    # Validate query is provided
+    if not query:
+        console.print("[error]Missing argument 'QUERY'[/]")
+        console.print("Try 'airpods models search --help' for more information.")
+        raise typer.Exit(1)
+
+    # Validate source option
+    if source and source.lower() not in ("ollama", "huggingface", "hf"):
+        console.print(
+            f"[error]Invalid source '{source}'. Must be 'ollama' or 'huggingface'[/]"
+        )
+        raise typer.Exit(1)
+
+    # Normalize source
+    search_ollama = source is None or source.lower() == "ollama"
+    search_hf = source is None or source.lower() in ("huggingface", "hf")
+
+    console.print(f"Searching for [accent]{query}[/]...\n")
+
+    # Search Ollama library
+    if search_ollama:
+        try:
+            ollama_results = ollama.search_ollama_library(query, limit)
+
+            if ollama_results:
+                # Group models by base name (part before ':')
+                grouped_models: dict[str, dict] = {}
+                for model in ollama_results:
+                    name = model["name"]
+                    base_name = name.split(":")[0]
+
+                    if base_name not in grouped_models:
+                        grouped_models[base_name] = {
+                            "variants": [],
+                            "description": model["description"],
+                        }
+
+                    # Extract variant (part after ':')
+                    if ":" in name:
+                        variant = name.split(":", 1)[1]
+                        grouped_models[base_name]["variants"].append(variant)
+
+                console.print("[bold]Ollama Library:[/bold]")
+                for base_name, info in grouped_models.items():
+                    # Format display name
+                    if info["variants"]:
+                        variants_str = ", ".join(info["variants"])
+                        display_name = f"{base_name} ({variants_str})"
+                    else:
+                        display_name = base_name
+
+                    url = f"https://ollama.com/library/{base_name}"
+
+                    console.print(f"  [accent]{display_name}[/accent]")
+                    console.print(f"    {info['description']}")
+                    console.print(f"    [dim]→ [link={url}]{url}[/link][/dim]")
+                    console.print()
+            else:
+                console.print("[dim]No results from Ollama library[/dim]\n")
+
+        except ollama.OllamaAPIError as e:
+            console.print(f"[warn]Ollama search failed: {e}[/]\n")
+
+    # Search HuggingFace
+    if search_hf:
+        try:
+            hf_results = ollama.search_huggingface_models(query, limit)
+
+            if hf_results:
+                console.print("[bold]HuggingFace (GGUF):[/bold]")
+                for model in hf_results:
+                    repo_id = model["repo_id"]
+                    author = model["author"]
+                    model_name = model["model_name"]
+                    downloads = model.get("downloads", 0)
+                    likes = model.get("likes", 0)
+                    url = f"https://huggingface.co/{repo_id}"
+
+                    console.print(f"  [accent]{repo_id}[/accent]")
+
+                    # Show stats
+                    stats_parts = []
+                    if downloads > 0:
+                        if downloads >= 1000:
+                            stats_parts.append(f"↓ {downloads // 1000}K downloads")
+                        else:
+                            stats_parts.append(f"↓ {downloads} downloads")
+                    if likes > 0:
+                        stats_parts.append(f"★ {likes} likes")
+
+                    if stats_parts:
+                        console.print(f"    [dim]{' • '.join(stats_parts)}[/dim]")
+
+                    console.print(f"    [dim]→ [link={url}]{url}[/link][/dim]")
+                    console.print()
+            else:
+                console.print("[dim]No results from HuggingFace[/dim]\n")
+
+        except ollama.OllamaAPIError as e:
+            console.print(f"[warn]HuggingFace search failed: {e}[/]\n")
+
+    # Show helpful tips
+    console.print(
+        "[dim]Tip: Use 'airpods models pull <model>' to download from Ollama[/dim]"
+    )
+    console.print(
+        "[dim]     Use 'airpods models pull <repo>' to download from HuggingFace[/dim]"
+    )
+
+
 def register(app: typer.Typer) -> CommandMap:
     """Register the models command and its subcommands."""
     app.add_typer(models_app, name="models")
