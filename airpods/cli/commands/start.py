@@ -18,8 +18,6 @@ from airpods.services import ServiceSpec
 
 from ..common import (
     COMMAND_CONTEXT,
-    DEFAULT_STARTUP_TIMEOUT,
-    DEFAULT_STARTUP_CHECK_INTERVAL,
     ensure_podman_available,
     format_transfer_label,
     is_verbose_mode,
@@ -213,29 +211,34 @@ def register(app: typer.Typer) -> CommandMap:
                     else:
                         console.print(f"[ok]✓[/] Pulled {spec.name}")
 
-        pull_start_times: dict[str, float] = {}
+        if verbose:
+            pull_start_times: dict[str, float] = {}
 
-        def _track_pull_start(phase, index, _total_count, spec):
-            if phase == "start":
-                pull_start_times[spec.name] = time.perf_counter()
-            _image_progress(phase, index, _total_count, spec)
+            def _track_pull_start(phase, index, _total_count, spec):
+                if phase == "start":
+                    pull_start_times[spec.name] = time.perf_counter()
+                _image_progress(phase, index, _total_count, spec)
 
-        manager.pull_images(
-            specs_to_start,
-            progress_callback=_track_pull_start if verbose else lambda *args: None,
-            max_concurrent=max_concurrent_pulls,
-        )
+            manager.pull_images(
+                specs_to_start,
+                progress_callback=_track_pull_start,
+                max_concurrent=max_concurrent_pulls,
+            )
+        else:
+            # Non-verbose mode still shows progress so long pulls don't feel like a hang.
+            _pull_images_only(specs_to_start, max_concurrent=max_concurrent_pulls)
 
         # Start services with simple logging
         for spec in specs_to_start:
             console.print(f"Starting [accent]{spec.name}[/]...")
 
             try:
-                manager.start_service(
-                    spec,
-                    gpu_available=gpu_available,
-                    force_cpu_override=force_cpu,
-                )
+                with status_spinner(f"Launching {spec.name}"):
+                    manager.start_service(
+                        spec,
+                        gpu_available=gpu_available,
+                        force_cpu_override=force_cpu,
+                    )
             except Exception as e:
                 console.print(f"[error]✗ Failed to start {spec.name}: {e}[/]")
                 failed_services.append(spec.name)
@@ -243,61 +246,77 @@ def register(app: typer.Typer) -> CommandMap:
 
         # Wait for health checks with timeout
         start_time = time.time()
-        timeout_seconds = DEFAULT_STARTUP_TIMEOUT
+        timeout_seconds = cli_config.startup_timeout
+        check_interval = cli_config.startup_check_interval
 
-        while True:
-            elapsed = time.time() - start_time
-            if elapsed >= timeout_seconds:
-                break
+        with status_spinner(
+            f"Waiting for services to become ready (up to {timeout_seconds}s)"
+        ) as status:
+            while True:
+                elapsed = time.time() - start_time
+                if elapsed >= timeout_seconds:
+                    break
 
-            pod_rows = manager.pod_status_rows() or {}
-            all_done = True
+                pod_rows = manager.pod_status_rows() or {}
+                all_done = True
+                pending: list[str] = []
 
-            for spec in specs_to_start:
-                if spec.name in failed_services:
-                    continue
+                for spec in specs_to_start:
+                    if spec.name in failed_services:
+                        continue
 
-                row = pod_rows.get(spec.pod)
-                if not row:
-                    all_done = False
-                    continue
+                    if spec.name in service_urls:
+                        continue  # Already healthy / ready
 
-                pod_status = (row.get("Status") or "").strip()
+                    row = pod_rows.get(spec.pod)
+                    if not row:
+                        all_done = False
+                        pending.append(spec.name)
+                        continue
 
-                if pod_status in {"Exited", "Error"}:
-                    if spec.name not in failed_services:
-                        failed_services.append(spec.name)
-                    continue
+                    pod_status = (row.get("Status") or "").strip()
 
-                if pod_status != "Running":
-                    all_done = False
-                    continue
+                    if pod_status in {"Exited", "Error"}:
+                        if spec.name not in failed_services:
+                            failed_services.append(spec.name)
+                        continue
 
-                # Service is running, check health if needed
-                if spec.name in service_urls:
-                    continue  # Already healthy
+                    if pod_status != "Running":
+                        all_done = False
+                        pending.append(spec.name)
+                        continue
 
-                port_bindings = manager.service_ports(spec)
-                host_ports = collect_host_ports(spec, port_bindings)
-                host_port = host_ports[0] if host_ports else None
+                    port_bindings = manager.service_ports(spec)
+                    host_ports = collect_host_ports(spec, port_bindings)
+                    host_port = host_ports[0] if host_ports else None
 
-                if not spec.health_path or host_port is None:
-                    # No health check needed
-                    if host_port:
+                    if not spec.health_path or host_port is None:
+                        # No health check needed; pod running is "ready".
+                        if host_port:
+                            service_urls[spec.name] = f"http://localhost:{host_port}"
+                        else:
+                            service_urls[spec.name] = ""
+                        continue
+
+                    if check_service_health(spec, host_port):
                         service_urls[spec.name] = f"http://localhost:{host_port}"
                     else:
-                        service_urls[spec.name] = ""
-                    continue
+                        all_done = False
+                        pending.append(spec.name)
 
-                if check_service_health(spec, host_port):
-                    service_urls[spec.name] = f"http://localhost:{host_port}"
+                if all_done:
+                    break
+
+                remaining = max(0, int(timeout_seconds - elapsed))
+                if pending:
+                    pending_label = ", ".join(pending)
+                    status.update(
+                        f"[info]Waiting ({remaining}s left): {pending_label}[/]"
+                    )
                 else:
-                    all_done = False
+                    status.update(f"[info]Waiting ({remaining}s left)[/]")
 
-            if all_done:
-                break
-
-            time.sleep(DEFAULT_STARTUP_CHECK_INTERVAL)
+                time.sleep(check_interval)
 
         # Handle timeouts
         for spec in specs_to_start:

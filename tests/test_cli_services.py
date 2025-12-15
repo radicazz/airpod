@@ -55,12 +55,20 @@ def test_start_respects_configured_concurrency(
 ):
     mock_resolve.return_value = [_make_mock_spec()]
     _mock_service_ready(mock_manager)
-    mock_get_cli_config.return_value = type("Config", (), {"max_concurrent_pulls": 5})
+    mock_get_cli_config.return_value = type(
+        "Config",
+        (),
+        {
+            "max_concurrent_pulls": 5,
+            "startup_timeout": 10,
+            "startup_check_interval": 0.01,
+        },
+    )
     mock_manager.ensure_network.return_value = False
     mock_manager.ensure_volumes.return_value = []
     mock_manager.pull_images.return_value = None
 
-    result = runner.invoke(app, ["start"])
+    result = runner.invoke(app, ["-V", "start"])
 
     assert result.exit_code == 0
     mock_manager.pull_images.assert_any_call(
@@ -79,12 +87,20 @@ def test_start_sequential_flag_forces_single_pull(
 ):
     mock_resolve.return_value = [_make_mock_spec()]
     _mock_service_ready(mock_manager)
-    mock_get_cli_config.return_value = type("Config", (), {"max_concurrent_pulls": 5})
+    mock_get_cli_config.return_value = type(
+        "Config",
+        (),
+        {
+            "max_concurrent_pulls": 5,
+            "startup_timeout": 10,
+            "startup_check_interval": 0.01,
+        },
+    )
     mock_manager.ensure_network.return_value = False
     mock_manager.ensure_volumes.return_value = []
     mock_manager.pull_images.return_value = None
 
-    result = runner.invoke(app, ["start", "--sequential"])
+    result = runner.invoke(app, ["-V", "start", "--sequential"])
 
     assert result.exit_code == 0
     mock_manager.pull_images.assert_any_call(
@@ -113,3 +129,32 @@ def test_pre_fetch_only_mode(
     mock_pull_only.assert_called_once_with([spec], max_concurrent=3)
     mock_manager.ensure_network.assert_not_called()
     mock_manager.ensure_volumes.assert_not_called()
+
+
+@patch("airpods.cli.commands.start.manager")
+@patch("airpods.cli.commands.start._pull_images_only")
+@patch("airpods.cli.commands.start.get_cli_config")
+@patch("airpods.cli.commands.start.ensure_podman_available")
+@patch("airpods.cli.commands.start.resolve_services")
+def test_start_non_verbose_uses_pull_ui(
+    mock_resolve, mock_ensure, mock_get_cli_config, mock_pull_only, mock_manager, runner
+):
+    spec = _make_mock_spec()
+    mock_resolve.return_value = [spec]
+    _mock_service_ready(mock_manager)
+    mock_get_cli_config.return_value = type(
+        "Config",
+        (),
+        {
+            "max_concurrent_pulls": 5,
+            "startup_timeout": 10,
+            "startup_check_interval": 0.01,
+        },
+    )
+    mock_manager.ensure_network.return_value = False
+    mock_manager.ensure_volumes.return_value = []
+
+    result = runner.invoke(app, ["start"])
+
+    assert result.exit_code == 0
+    mock_pull_only.assert_called_once_with([spec], max_concurrent=5)

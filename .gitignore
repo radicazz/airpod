@@ -18,6 +18,8 @@ venv/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
+.pre-commit-cache/
+.uv-cache/
 coverage.xml
 htmlcov/
 
