@@ -111,6 +111,8 @@ def _service_spec_from_config(
         env_factory=env_factory,
         volumes=volumes,
         network_aliases=list(service.network_aliases),
+        network_mode=service.network_mode or "pod",
+        pids_limit=service.pids_limit,
         needs_gpu=service.gpu.enabled,
         health_path=service.health.path,
         force_cpu=service.gpu.force_cpu,

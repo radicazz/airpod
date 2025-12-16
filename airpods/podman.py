@@ -210,6 +210,8 @@ def run_container(
     gpu: bool = False,
     restart_policy: str = "unless-stopped",
     gpu_device_flag: Optional[str] = None,
+    network_mode: str = "pod",
+    pids_limit: int = 2048,
 ) -> bool:
     existed = container_exists(name)
 
@@ -230,11 +232,19 @@ def run_container(
         "--replace",
         "--name",
         name,
-        "--pod",
-        pod,
         "--restart",
         restart_policy,
+        "--pids-limit",
+        str(pids_limit),
     ]
+
+    # Handle network mode
+    if network_mode == "host":
+        args.extend(["--network", "host"])
+    else:
+        # Use pod networking (default)
+        args.extend(["--pod", pod])
+
     for key, val in env.items():
         args.extend(["-e", f"{key}={val}"])
     for volume_name, dest in volumes:

@@ -138,12 +138,14 @@ class ServiceConfig(BaseModel):
     pod: str
     container: str
     network_aliases: List[str] = Field(default_factory=list)
+    network_mode: Optional[Literal["pod", "host"]] = "pod"
     ports: List[PortMapping] = Field(default_factory=list)
     volumes: Dict[str, VolumeMount] = Field(default_factory=dict)
     gpu: GPUConfig = Field(default_factory=GPUConfig)
     health: HealthConfig = Field(default_factory=HealthConfig)
     env: Dict[str, str] = Field(default_factory=dict)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
+    pids_limit: int = Field(default=2048, ge=1, le=1000000)
     needs_webui_secret: bool = False
     cuda_override: Optional[str] = None
     auto_pull_models: List[str] = Field(default_factory=list)

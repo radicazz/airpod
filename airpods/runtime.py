@@ -69,6 +69,8 @@ class ContainerRuntime(Protocol):
         gpu: bool = False,
         restart_policy: str = "unless-stopped",
         gpu_device_flag: Optional[str] = None,
+        network_mode: str = "pod",
+        pids_limit: int = 2048,
     ) -> bool:
         """Run a container in a pod.
 
@@ -201,6 +203,8 @@ class PodmanRuntime:
         gpu: bool = False,
         restart_policy: str = "unless-stopped",
         gpu_device_flag: Optional[str] = None,
+        network_mode: str = "pod",
+        pids_limit: int = 2048,
     ) -> bool:
         try:
             return podman.run_container(
@@ -213,6 +217,8 @@ class PodmanRuntime:
                 gpu=gpu,
                 restart_policy=restart_policy,
                 gpu_device_flag=gpu_device_flag,
+                network_mode=network_mode,
+                pids_limit=pids_limit,
             )
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc

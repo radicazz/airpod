@@ -54,6 +54,8 @@ class ServiceSpec:
     env_factory: Optional[Callable[[], Dict[str, str]]] = None
     volumes: List[VolumeMount] = field(default_factory=list)
     network_aliases: List[str] = field(default_factory=list)
+    network_mode: str = "pod"
+    pids_limit: int = 2048
     needs_gpu: bool = False
     health_path: Optional[str] = None
     force_cpu: bool = False
@@ -310,6 +312,8 @@ class ServiceManager:
             gpu=gpu_enabled and gpu_available,
             restart_policy=self.restart_policy,
             gpu_device_flag=self.gpu_device_flag,
+            network_mode=spec.network_mode,
+            pids_limit=spec.pids_limit,
         )
         return ServiceStartResult(
             spec=spec, pod_created=pod_created, container_replaced=container_replaced
