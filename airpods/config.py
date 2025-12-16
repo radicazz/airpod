@@ -8,7 +8,7 @@ from airpods.configuration.errors import ConfigurationError
 from airpods.configuration.schema import AirpodsConfig, ServiceConfig
 from airpods.services import ServiceRegistry, ServiceSpec, VolumeMount
 from airpods.cuda import select_cuda_version
-from airpods.comfyui import select_comfyui_image, select_provider
+from airpods.comfyui import select_comfyui_image, select_provider, get_default_env
 from airpods.system import detect_cuda_compute_capability
 from airpods.logging import console
 
@@ -89,6 +89,13 @@ def _resolve_cuda_image(
     return resolved_image
 
 
+def _get_comfyui_provider_env(config: AirpodsConfig) -> Dict[str, str]:
+    """Get provider-specific environment variables for ComfyUI."""
+    has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
+    provider = select_provider(compute_cap, "auto")  # type: ignore
+    return get_default_env(provider)
+
+
 def _service_spec_from_config(
     name: str, service: ServiceConfig, config: AirpodsConfig
 ) -> ServiceSpec:
@@ -110,13 +117,23 @@ def _service_spec_from_config(
     # Resolve CUDA-aware image for ComfyUI
     resolved_image = _resolve_cuda_image(name, service, config)
 
+    # Build environment variables with provider-specific defaults
+    env = dict(service.env)
+    if name == "comfyui":
+        # Add provider-specific environment variables (mmartial needs extra env vars)
+        provider_env = _get_comfyui_provider_env(config)
+        # User-configured env takes precedence over provider defaults
+        for key, value in provider_env.items():
+            if key not in env:
+                env[key] = value
+
     return ServiceSpec(
         name=name,
         pod=service.pod,
         container=service.container,
         image=resolved_image,
         ports=ports,
-        env=dict(service.env),
+        env=env,
         env_factory=env_factory,
         volumes=volumes,
         pids_limit=service.pids_limit,
