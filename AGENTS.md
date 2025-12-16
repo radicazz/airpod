@@ -5,11 +5,18 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 
 ## Command Surface
 - Global options: `-v/--version` prints the CLI version; `-h/--help` shows the custom help view plus alias table.
-- `start [service...]`: Ensures volumes/images, then launches pods (default both) while explaining when volumes, pods, or containers are reused vs newly created. Waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds, with health-less services marked ready once their pod is running. Skips recreation if containers are already running. GPU auto-detected and attached to Ollama; CPU fallback allowed. `--pre-fetch` downloads service images and exits without starting containers for ahead-of-time cache warmups. Exposed aliases: `up`, `run`.
+- `start [service...]`: Ensures volumes/images, then launches pods (default both) while explaining when volumes, pods, or containers are reused vs newly created. Shows download confirmation with sizes and disk space checks (skip with `--yes`). Waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds, with health-less services marked ready once their pod is running. Skips recreation if containers are already running. GPU auto-detected and attached to Ollama; CPU fallback allowed. `--pre-fetch` downloads service images and exits without starting containers for ahead-of-time cache warmups. Exposed aliases: `up`, `run`.
 - `stop [service...]`: Graceful stop; optional removal of pods while preserving volumes by default, with an interactive confirmation prompt before destructive removal. Exposed aliases: `down`.
 - `status [service...]`: Compact Rich table (Service / Status / Info) summarizing HTTP health plus friendly URLs for running pods, or pod status + port summaries for stopped ones; redundant columns (pod name, uptime, counts) were removed for readability. Exposed aliases: `ps`, `info`.
 - `logs [service...]`: Tail logs for specified services or all; supports follow/since/lines.
 - `doctor`: Re-run checks without creating resources; surfaces remediation hints without touching pods/volumes.
+- `models`: Manage Ollama models with subcommands:
+  - `search <query>`: Search Ollama's registry for models by name/tag
+  - `pull <model>`: Download a model to local Ollama instance
+  - `list`: Show installed models with sizes
+  - `remove <model>`: Delete a local model
+- `backup`: Create compressed archive of configs, Open WebUI database, plugins, and Ollama metadata (not model binaries). Supports custom destination, filename, and optional SQL dump.
+- `restore <archive>`: Unpack backup archive and restore configs, WebUI data, and metadata. Backs up existing data first. Includes flags to skip configs/db/plugins/models.
 - `clean`: Remove volumes, images, configs, and user data created by airpods. Offers granular control via flags:
   - `--all/-a`: Remove everything (pods, volumes, images, configs)
   - `--pods/-p`: Stop and remove all pods and containers
@@ -35,7 +42,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `airpods/cli/common.py` – shared constants, service manager, and Podman/dependency helpers.
   - `airpods/cli/help.py` – Rich-powered help/alias rendering tables used by the root callback.
   - `airpods/cli/status_view.py` – status table + health probing utilities.
-  - `airpods/cli/commands/` – individual command modules (`doctor`, `start`, `stop`, `status`, `logs`, `version`, `config`, `clean`) each registering via `commands.__init__.register`.
+  - `airpods/cli/commands/` – individual command modules (`backup`, `clean`, `config`, `doctor`, `logs`, `models`, `start`, `status`, `stop`) each registering via `commands.__init__.register`.
   - `airpods/cli/type_defs.py` – shared Typer command mapping type alias.
 - Configuration system:
   - `airpods/configuration/` – Pydantic-based config schema, loader, template resolver, and error types.
