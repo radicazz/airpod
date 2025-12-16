@@ -7,7 +7,8 @@ from airpods.configuration import get_config
 from airpods.configuration.errors import ConfigurationError
 from airpods.configuration.schema import AirpodsConfig, ServiceConfig
 from airpods.services import ServiceRegistry, ServiceSpec, VolumeMount
-from airpods.cuda import select_cuda_version, select_comfyui_image
+from airpods.cuda import select_cuda_version
+from airpods.comfyui import select_comfyui_image, select_provider
 from airpods.system import detect_cuda_compute_capability
 from airpods.logging import console
 
@@ -49,6 +50,9 @@ def _resolve_cuda_image(
     selected_cuda_version = None
     selection_source = None
 
+    # Detect GPU capability for provider selection
+    has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
+
     if service.cuda_override:
         selected_cuda_version = service.cuda_override
         selection_source = f"service override ({service.cuda_override})"
@@ -57,7 +61,6 @@ def _resolve_cuda_image(
         selection_source = f"runtime setting ({config.runtime.cuda_version})"
     else:
         # Auto-detection
-        has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
         if has_gpu and compute_cap:
             selected_cuda_version = select_cuda_version(compute_cap)
             major, minor = compute_cap
@@ -69,9 +72,15 @@ def _resolve_cuda_image(
             selected_cuda_version = "cu126"
             selection_source = f"fallback (GPU detection failed: {gpu_name})"
 
+    # Select provider (yanwk vs mmartial) - for now, default to yanwk
+    # This will be enhanced in later commits
+    provider = select_provider(compute_cap, "yanwk")  # type: ignore
+
     # Force CPU if GPU is disabled for this service
     force_cpu = service.gpu.force_cpu or not service.gpu.enabled
-    resolved_image = select_comfyui_image(selected_cuda_version, force_cpu=force_cpu)
+    resolved_image = select_comfyui_image(
+        selected_cuda_version, force_cpu=force_cpu, provider=provider
+    )
 
     # Log the selection for transparency
     if ENABLE_COMFY_CUDA_LOG and resolved_image != service.image:

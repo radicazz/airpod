@@ -7,14 +7,20 @@ import pytest
 
 from airpods.cuda import (
     CUDA_COMPATIBILITY_MAP,
-    COMFYUI_IMAGES,
     DEFAULT_CUDA_VERSION,
     select_cuda_version,
-    select_comfyui_image,
     get_cuda_info_display,
     _cuda_version_newer,
 )
+from airpods.comfyui import (
+    YANWK_IMAGES,
+    select_comfyui_image,
+    select_provider,
+)
 from airpods.system import detect_cuda_compute_capability
+
+# For backwards compatibility with tests
+COMFYUI_IMAGES = YANWK_IMAGES
 
 
 class TestSelectCudaVersion:
@@ -56,25 +62,40 @@ class TestSelectComfyuiImage:
 
     def test_force_cpu_returns_cpu_image(self):
         """Test that force_cpu=True returns CPU image regardless of CUDA version."""
-        assert select_comfyui_image("cu128", force_cpu=True) == COMFYUI_IMAGES["cpu"]
-        assert select_comfyui_image("cu126", force_cpu=True) == COMFYUI_IMAGES["cpu"]
-        assert select_comfyui_image(None, force_cpu=True) == COMFYUI_IMAGES["cpu"]
+        assert (
+            select_comfyui_image("cu128", force_cpu=True, provider="yanwk")
+            == COMFYUI_IMAGES["cpu"]
+        )
+        assert (
+            select_comfyui_image("cu126", force_cpu=True, provider="yanwk")
+            == COMFYUI_IMAGES["cpu"]
+        )
+        assert (
+            select_comfyui_image(None, force_cpu=True, provider="yanwk")
+            == COMFYUI_IMAGES["cpu"]
+        )
 
     def test_none_cuda_version_uses_default(self):
         """Test that None CUDA version uses default."""
-        result = select_comfyui_image(None)
+        result = select_comfyui_image(None, provider="yanwk")
         expected = COMFYUI_IMAGES[DEFAULT_CUDA_VERSION]
         assert result == expected
 
     def test_valid_cuda_versions(self):
         """Test that valid CUDA versions return correct images."""
-        assert select_comfyui_image("cu126") == COMFYUI_IMAGES["cu126"]
-        assert select_comfyui_image("cu128") == COMFYUI_IMAGES["cu128"]
-        assert select_comfyui_image("cu130") == COMFYUI_IMAGES["cu130"]
+        assert (
+            select_comfyui_image("cu126", provider="yanwk") == COMFYUI_IMAGES["cu126"]
+        )
+        assert (
+            select_comfyui_image("cu128", provider="yanwk") == COMFYUI_IMAGES["cu128"]
+        )
+        assert (
+            select_comfyui_image("cu130", provider="yanwk") == COMFYUI_IMAGES["cu130"]
+        )
 
     def test_unknown_cuda_version_fallback(self):
         """Test that unknown CUDA versions fall back to default."""
-        result = select_comfyui_image("cu999")  # Non-existent version
+        result = select_comfyui_image("cu999", provider="yanwk")  # Non-existent version
         expected = COMFYUI_IMAGES[DEFAULT_CUDA_VERSION]
         assert result == expected
 
@@ -306,3 +327,46 @@ class TestComfyuiImageMap:
     def test_default_cuda_version_exists_in_images(self):
         """Test that the default CUDA version has a corresponding image."""
         assert DEFAULT_CUDA_VERSION in COMFYUI_IMAGES
+
+
+class TestSelectProvider:
+    """Tests for select_provider function."""
+
+    def test_explicit_provider_yanwk(self):
+        """Test explicit yanwk provider selection."""
+        assert select_provider((7, 5), "yanwk") == "yanwk"
+        assert select_provider((6, 1), "yanwk") == "yanwk"
+        assert select_provider(None, "yanwk") == "yanwk"
+
+    def test_explicit_provider_mmartial(self):
+        """Test explicit mmartial provider selection."""
+        assert select_provider((7, 5), "mmartial") == "mmartial"
+        assert select_provider((8, 6), "mmartial") == "mmartial"
+        assert select_provider(None, "mmartial") == "mmartial"
+
+    def test_auto_selects_mmartial_for_pascal(self):
+        """Test auto selection chooses mmartial for Pascal (6.x) GPUs."""
+        # GTX 10xx series (Pascal)
+        assert select_provider((6, 1), "auto") == "mmartial"
+        assert select_provider((6, 0), "auto") == "mmartial"
+        assert select_provider((6, 2), "auto") == "mmartial"
+
+    def test_auto_selects_mmartial_for_older(self):
+        """Test auto selection chooses mmartial for older architectures."""
+        # Maxwell
+        assert select_provider((5, 2), "auto") == "mmartial"
+        # Kepler
+        assert select_provider((3, 5), "auto") == "mmartial"
+
+    def test_auto_selects_yanwk_for_newer(self):
+        """Test auto selection chooses yanwk for newer architectures."""
+        # Turing (7.x)
+        assert select_provider((7, 5), "auto") == "yanwk"
+        # Ampere (8.x)
+        assert select_provider((8, 6), "auto") == "yanwk"
+        # Hopper (9.x)
+        assert select_provider((9, 0), "auto") == "yanwk"
+
+    def test_auto_defaults_to_yanwk_when_no_gpu(self):
+        """Test auto selection defaults to yanwk when GPU unavailable."""
+        assert select_provider(None, "auto") == "yanwk"
