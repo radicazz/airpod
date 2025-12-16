@@ -43,19 +43,22 @@ uv sync --dev
 
 ### Running
 
-Use the `dairpods` command or set the environment variable:
+Simply use `uv run airpods` - it will automatically detect that you're in a git repository:
 
 ```bash
-# Option 1: Use dairpods command
-uv run dairpods start
+# Automatically uses development mode
+uv run airpods start
 
-# Option 2: Set environment variable
+# Force production mode (even in repo)
+AIRPODS_DEV_MODE=0 uv run airpods start
+
+# Force development mode (explicit)
 AIRPODS_DEV_MODE=1 uv run airpods start
 ```
 
 ### Behavior
 
-- **Command**: `dairpods`
+- **Command**: `airpods` (same as production)
 - **Configuration**: Stored in `<repo>/configs/`
 - **Volumes**: Stored in `<repo>/volumes/`
 - **Podman resources**: Prefixed with `airpods-dev_` (e.g., `airpods-dev_ollama`, `airpods-dev-net`)
@@ -72,7 +75,7 @@ AIRPODS_DEV_MODE=1 uv run airpods start
 
 The two modes are completely isolated:
 
-- **Different commands**: `airpods` vs `dairpods`
+- **Same command name**: `airpods` (mode auto-detected)
 - **Different paths**: XDG directories vs repository
 - **Different Podman resources**: `airpods_*` vs `airpods-dev_*`
 - **Can run simultaneously**: Both installations can run at the same time (though they'll compete for GPU)
@@ -80,16 +83,16 @@ The two modes are completely isolated:
 ## Example Workflow
 
 ```bash
-# Use production for daily work
+# Use production for daily work (installed via uv tool)
 airpods start ollama
 airpods status
 
-# Meanwhile, develop and test changes
+# Meanwhile, develop and test changes (in git repo)
 cd ~/Code/airpods
-uv run dairpods start ollama  # Different container
-uv run dairpods status
+uv run airpods start ollama  # Automatically uses dev mode, different container
+uv run airpods status
 # ...make changes, test...
-uv run dairpods stop
+uv run airpods stop
 
 # Production instance is unaffected
 airpods status  # Still running
@@ -97,10 +100,18 @@ airpods status  # Still running
 
 ## Mode Detection
 
-The runtime mode is detected via:
+The runtime mode is automatically detected via:
 
-1. **Script name**: If invoked as `dairpods` → development mode
-2. **Environment variable**: If `AIRPODS_DEV_MODE=1` → development mode
-3. **Default**: Production mode
+1. **Environment variable override**:
+   - `AIRPODS_DEV_MODE=1` → forces development mode
+   - `AIRPODS_DEV_MODE=0` → forces production mode
+2. **Git repository detection**: If the `airpods` package is located within a git repository → development mode
+3. **Default**: Production mode (when installed via `uv tool install`)
+
+### How It Works
+
+- **Production install**: Package installs to `~/.local/share/uv/tools/` or similar (no `.git` directory) → production mode
+- **Development clone**: Package source is in cloned repository (`.git` exists) → development mode
+- **Manual override**: Set `AIRPODS_DEV_MODE` to explicitly control mode
 
 Implementation: `airpods/runtime_mode.py`

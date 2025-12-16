@@ -37,7 +37,6 @@ Repository = "https://github.com/radicazz/airpods"
 
 [project.scripts]
 airpods = "airpods.cli:main"
-dairpods = "airpods.cli:main"
 
 [project.optional-dependencies]
 dev = [

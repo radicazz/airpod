@@ -1,7 +1,7 @@
 # Agents & Plan
 
 ## Intent
-Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools for production or `dairpods` for development) that orchestrates local AI services via Podman. Services are configurable via TOML files with template support. Services: Ollama (GGUF-capable), Open WebUI wired to Ollama, and ComfyUI (using yanwk/comfyui-boot community image; future plan to fork and build custom).
+Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via Podman. Services are configurable via TOML files with template support. Services: Ollama (GGUF-capable), Open WebUI wired to Ollama, and ComfyUI (using yanwk/comfyui-boot community image; future plan to fork and build custom).
 
 ## Runtime Modes
 The CLI operates in two distinct modes to avoid conflicts between production and development installations:
@@ -14,15 +14,15 @@ The CLI operates in two distinct modes to avoid conflicts between production and
 - **Podman resources**: `airpods_ollama`, `airpods_webui`, `airpods_comfyui`, `airpods-net`
 - **Behavior**: Never touches the git repository; acts as a standard XDG-compliant application
 
-### Development Mode (`dairpods`)
-- **Installation**: Clone repo + `uv sync --dev` → `uv run dairpods` or set `AIRPODS_DEV_MODE=1`
+### Development Mode (`airpods`)
+- **Installation**: Clone repo + `uv sync --dev` → `uv run airpods` (auto-detects git repository)
 - **State directories**: Repository root (e.g., `/path/to/airpods/`)
 - **Config priority**: `$AIRPODS_CONFIG` → `$AIRPODS_HOME/configs/config.toml` → `<repo>/configs/config.toml` → defaults
 - **Volumes**: `<repo>/volumes/{airpods-dev_ollama_data,airpods-dev_webui_data,airpods-dev_comfyui_data}`
 - **Podman resources**: `airpods-dev_ollama`, `airpods-dev_webui`, `airpods-dev_comfyui`, `airpods-dev-net`
 - **Behavior**: All state (configs, volumes, secrets) stored in repo; never touches XDG directories
 
-**Mode Detection**: Checks script name (`dairpods`) or environment variable (`AIRPODS_DEV_MODE=1`). Implemented in `airpods/runtime_mode.py`.
+**Mode Detection**: Automatically detects if the airpods package is running from within a git repository (development mode) or from an installed package (production mode). Can be explicitly overridden via `AIRPODS_DEV_MODE` environment variable (`1` for dev, `0` for prod). Implemented in `airpods/runtime_mode.py`.
 
 **Resource Isolation**: Pod names, container names, network names, and volume paths are prefixed based on mode, allowing both installations to run simultaneously without conflicts.
 
@@ -95,9 +95,9 @@ The CLI operates in two distinct modes to avoid conflicts between production and
 - Integration (later): optional Podman-in-Podman smoke tests; GPU checks skipped when unavailable.
 
 ## Development Workflow
-- **Local development setup**: Clone repo → `uv sync --dev` → `uv run dairpods <command>` (all state stays in repo).
+- **Local development setup**: Clone repo → `uv sync --dev` → `uv run airpods <command>` (automatically detects git repo, all state stays in repo).
 - **Production testing**: Install via `uv tool install git+...` → `airpods <command>` (uses XDG directories).
-- **Isolation**: Dev and production modes can coexist; different commands, paths, and Podman resources ensure no conflicts.
+- **Isolation**: Dev and production modes can coexist; same command name but different paths and Podman resources ensure no conflicts.
 - Version bump rules (update `pyproject.toml` before committing):
   - Patch bump (e.g., `0.9.1` → `0.9.2`) for bug fixes and small UX/behavior improvements.
   - Minor bump (e.g., `0.9.1` → `0.10.0`) for large features or meaningful command-surface additions.

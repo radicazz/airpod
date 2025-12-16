@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -19,9 +19,11 @@ class TestRuntimeMode:
         is_dev_mode.cache_clear()
 
     def test_production_mode_default(self):
-        """By default, should be in production mode."""
+        """By default (no git repo), should be in production mode."""
         with patch.dict(os.environ, {}, clear=True):
-            with patch.object(sys, "argv", ["airpods"]):
+            # Mock detect_repo_root to return None (no git repo found)
+            with patch("airpods.runtime_mode.detect_repo_root", return_value=None):
+                is_dev_mode.cache_clear()
                 assert is_dev_mode() is False
                 assert get_resource_prefix() == "airpods"
                 assert get_mode_name() == "production"
@@ -34,41 +36,62 @@ class TestRuntimeMode:
             assert get_resource_prefix() == "airpods-dev"
             assert get_mode_name() == "development"
 
-    def test_dev_mode_via_script_name(self):
-        """dairpods in script name should enable dev mode."""
-        with patch.dict(os.environ, {}, clear=True):
-            with patch.object(sys, "argv", ["dairpods"]):
+    def test_prod_mode_via_env_var(self):
+        """AIRPODS_DEV_MODE=0 should force production mode."""
+        # Even when in a git repo, AIRPODS_DEV_MODE=0 forces production
+        with patch.dict(os.environ, {"AIRPODS_DEV_MODE": "0"}):
+            with patch(
+                "airpods.runtime_mode.detect_repo_root", return_value=Path("/repo")
+            ):
                 is_dev_mode.cache_clear()
-                assert is_dev_mode() is True
-                assert get_resource_prefix() == "airpods-dev"
-                assert get_mode_name() == "development"
+                assert is_dev_mode() is False
+                assert get_resource_prefix() == "airpods"
+                assert get_mode_name() == "production"
 
-    def test_dev_mode_via_script_path(self):
-        """/some/path/dairpods should enable dev mode."""
+    def test_dev_mode_via_git_detection(self):
+        """When package is in a git repo, should enable dev mode."""
         with patch.dict(os.environ, {}, clear=True):
-            with patch.object(sys, "argv", ["/usr/local/bin/dairpods"]):
+            # Mock detect_repo_root to return a repo path
+            with patch(
+                "airpods.runtime_mode.detect_repo_root",
+                return_value=Path("/home/user/airpods"),
+            ):
                 is_dev_mode.cache_clear()
                 assert is_dev_mode() is True
                 assert get_resource_prefix() == "airpods-dev"
                 assert get_mode_name() == "development"
 
     def test_env_var_not_1(self):
-        """AIRPODS_DEV_MODE set to anything other than '1' should be production."""
+        """AIRPODS_DEV_MODE set to '0' should force production mode."""
         with patch.dict(os.environ, {"AIRPODS_DEV_MODE": "0"}):
-            is_dev_mode.cache_clear()
-            assert is_dev_mode() is False
-            assert get_resource_prefix() == "airpods"
+            with patch("airpods.runtime_mode.detect_repo_root", return_value=None):
+                is_dev_mode.cache_clear()
+                assert is_dev_mode() is False
+                assert get_resource_prefix() == "airpods"
 
+    def test_env_var_invalid_value(self):
+        """AIRPODS_DEV_MODE set to anything other than '0' or '1' should fall back to git detection."""
+        # Invalid value -> falls back to git detection
         with patch.dict(os.environ, {"AIRPODS_DEV_MODE": "true"}):
-            is_dev_mode.cache_clear()
-            assert is_dev_mode() is False
+            with patch("airpods.runtime_mode.detect_repo_root", return_value=None):
+                is_dev_mode.cache_clear()
+                assert is_dev_mode() is False
 
     def test_env_var_takes_precedence(self):
-        """Env var should take precedence over script name."""
+        """Env var should take precedence over git detection."""
+        # Force dev mode via env var, even when no git repo
         with patch.dict(os.environ, {"AIRPODS_DEV_MODE": "1"}):
-            with patch.object(sys, "argv", ["airpods"]):  # Production script name
+            with patch("airpods.runtime_mode.detect_repo_root", return_value=None):
                 is_dev_mode.cache_clear()
-                assert is_dev_mode() is True  # But env var forces dev mode
+                assert is_dev_mode() is True
+
+        # Force production mode via env var, even when in git repo
+        with patch.dict(os.environ, {"AIRPODS_DEV_MODE": "0"}):
+            with patch(
+                "airpods.runtime_mode.detect_repo_root", return_value=Path("/repo")
+            ):
+                is_dev_mode.cache_clear()
+                assert is_dev_mode() is False
 
     def test_caching(self):
         """Mode detection should be cached."""
@@ -80,6 +103,7 @@ class TestRuntimeMode:
             os.environ.pop("AIRPODS_DEV_MODE")
             assert is_dev_mode() is True  # Still cached
 
-            # Clear cache and check again
-            is_dev_mode.cache_clear()
-            assert is_dev_mode() is False  # Now reflects new state
+            # Clear cache and check again - now falls back to git detection
+            with patch("airpods.runtime_mode.detect_repo_root", return_value=None):
+                is_dev_mode.cache_clear()
+                assert is_dev_mode() is False  # Now reflects new state
