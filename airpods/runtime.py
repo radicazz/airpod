@@ -97,6 +97,18 @@ class ContainerRuntime(Protocol):
         """Get the size of an image in human-readable format."""
         ...
 
+    def image_exists(self, image: str) -> bool:
+        """Check if an image exists locally."""
+        ...
+
+    def image_size_bytes(self, image: str) -> Optional[int]:
+        """Get the size of an image in bytes."""
+        ...
+
+    def get_remote_image_size(self, image: str) -> Optional[int]:
+        """Get the size of a remote image in bytes."""
+        ...
+
     def list_volumes(self) -> List[str]:
         """List all volumes matching airpods pattern."""
         ...
@@ -202,6 +214,15 @@ class PodmanRuntime:
 
     def image_size(self, image: str) -> Optional[str]:
         return podman.image_size(image)
+
+    def image_exists(self, image: str) -> bool:
+        return podman.image_exists(image)
+
+    def image_size_bytes(self, image: str) -> Optional[int]:
+        return podman.image_size_bytes(image)
+
+    def get_remote_image_size(self, image: str) -> Optional[int]:
+        return podman.get_remote_image_size(image)
 
     def list_volumes(self) -> List[str]:
         return podman.list_volumes()

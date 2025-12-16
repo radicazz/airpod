@@ -156,6 +156,19 @@ def _service_spec_from_config(
             if key not in env:
                 env[key] = value
 
+    # Conditionally inject Ollama configuration for open-webui service
+    if name == "open-webui" and service.auto_configure_ollama:
+        ollama_service = config.services.get("ollama")
+        if ollama_service and ollama_service.ports:
+            ollama_port = ollama_service.ports[0].host
+            env.update(
+                {
+                    "OLLAMA_BASE_URL": f"http://localhost:{ollama_port}",
+                    "OPENAI_API_BASE_URL": f"http://localhost:{ollama_port}/v1",
+                    "OPENAI_API_KEY": "ollama",
+                }
+            )
+
     # Set userns_mode for mmartial ComfyUI (needs keep-id for proper file ownership at pod level)
     userns_mode = None
     if name == "comfyui":

@@ -72,15 +72,11 @@ DEFAULT_CONFIG_DICT = {
             "env": {
                 # With host networking, container binds to PORT directly (no port mapping)
                 "PORT": "{{services.open-webui.ports.0.host}}",
-                "OLLAMA_BASE_URL": "http://localhost:{{services.ollama.ports.0.host}}",
-                # Avoid accidental calls to api.openai.com by default; point any OpenAI-compatible
-                # connection to the local Ollama OpenAI-compatible endpoint instead.
-                "OPENAI_API_BASE_URL": "http://localhost:{{services.ollama.ports.0.host}}/v1",
-                "OPENAI_API_KEY": "ollama",
                 "ENABLE_COMMUNITY_SHARING": "True",
             },
             "resources": {},
             "needs_webui_secret": True,
+            "auto_configure_ollama": False,
         },
         "comfyui": {
             "enabled": True,

@@ -72,6 +72,12 @@ def register(app: typer.Typer) -> CommandMap:
             "--wait",
             help="Wait for HTTP health checks before returning (may take a while for some services).",
         ),
+        yes: bool = typer.Option(
+            False,
+            "--yes",
+            "-y",
+            help="Skip confirmation prompts (auto-confirm downloads).",
+        ),
     ) -> None:
         """Start pods for specified services."""
         maybe_show_command_help(ctx, help_)
@@ -119,6 +125,11 @@ def register(app: typer.Typer) -> CommandMap:
         max_concurrent_pulls = 1 if sequential else cli_config.max_concurrent_pulls
 
         if pre_fetch:
+            # Check for images that need to be downloaded and confirm with user
+            if not yes:
+                if not _confirm_image_downloads(specs):
+                    console.print("[warn]Download cancelled by user[/]")
+                    raise typer.Exit(code=0)
             _pull_images_with_progress(specs, max_concurrent=max_concurrent_pulls)
             return
 
@@ -209,6 +220,12 @@ def register(app: typer.Typer) -> CommandMap:
         service_urls: dict[str, str] = {}
         failed_services = []
         timeout_services = []
+
+        # Check for images that need to be downloaded and confirm with user
+        if not yes:
+            if not _confirm_image_downloads(specs_to_start):
+                console.print("[warn]Download cancelled by user[/]")
+                raise typer.Exit(code=0)
 
         # Pull images with live progress so long pulls don't feel like a hang.
         _pull_images_with_progress(
@@ -461,6 +478,103 @@ def register(app: typer.Typer) -> CommandMap:
                     )
 
     return {"start": start}
+
+
+def _format_size(size_bytes: int) -> str:
+    """Format bytes as human-readable size."""
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.1f} PB"
+
+
+def _confirm_image_downloads(specs: list[ServiceSpec]) -> bool:
+    """Check for images to download and confirm with user.
+
+    Returns True to proceed, False to cancel.
+    """
+    import shutil
+    from rich.table import Table
+    from rich.prompt import Confirm
+
+    # Collect images that need to be downloaded
+    to_download: list[tuple[str, str, int]] = []  # (service, image, size_bytes)
+
+    with status_spinner("Checking images"):
+        for spec in specs:
+            # Check if image already exists locally
+            if manager.runtime.image_exists(spec.image):
+                continue
+
+            # Try to get remote image size
+            size_bytes = manager.runtime.get_remote_image_size(spec.image)
+
+            # If we couldn't get size, use a placeholder
+            if size_bytes is None:
+                size_bytes = 0  # Will be marked as unknown
+
+            to_download.append((spec.name, spec.image, size_bytes))
+
+    # If no downloads needed, proceed
+    if not to_download:
+        return True
+
+    # Get available disk space
+    try:
+        stat = shutil.disk_usage("/var/lib/containers")
+    except (OSError, FileNotFoundError):
+        # Fallback to root filesystem
+        try:
+            stat = shutil.disk_usage("/")
+        except (OSError, FileNotFoundError):
+            stat = None
+
+    # Calculate total download size
+    total_bytes = sum(size for _, _, size in to_download if size > 0)
+    has_unknown_sizes = any(size == 0 for _, _, size in to_download)
+
+    # Create borderless table
+    table = Table(show_header=True, show_edge=False, show_lines=False, padding=(0, 2))
+    table.add_column("Service", style="cyan", no_wrap=True)
+    table.add_column("Image", style="dim")
+    table.add_column("Size", justify="right", style="yellow")
+
+    for service, image, size_bytes in to_download:
+        # Truncate long image names
+        display_image = image
+        if len(display_image) > 45:
+            display_image = f"{display_image[:42]}..."
+
+        size_str = _format_size(size_bytes) if size_bytes > 0 else "unknown"
+        table.add_row(service, display_image, size_str)
+
+    console.print()
+    console.print("[bold]Images to download:[/]")
+    console.print(table)
+    console.print()
+
+    # Show total and available space
+    if total_bytes > 0:
+        console.print(f"Total download: [yellow]{_format_size(total_bytes)}[/]")
+    elif has_unknown_sizes:
+        console.print("Total download: [dim]calculating...[/]")
+
+    if stat:
+        available = stat.free
+        console.print(f"Available space: [green]{_format_size(available)}[/]")
+
+        # Warn if insufficient space (with 10% buffer)
+        if total_bytes > 0 and total_bytes * 1.1 > available:
+            console.print(f"[warn]⚠ Warning: Download may exceed available space[/]")
+    console.print()
+
+    # Prompt for confirmation
+    try:
+        return Confirm.ask("Proceed with download?", default=True)
+    except (KeyboardInterrupt, EOFError):
+        console.print()
+        return False
 
 
 @dataclass(frozen=True)

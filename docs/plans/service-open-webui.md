@@ -33,8 +33,14 @@
 ## Configuration & Deployment Notes
 
 - Service definition follows existing `open-webui` config (image, ports, volumes, env, health). Plugins are managed inside the running app; airpods does not ship or update plugins.
+- **Ollama Integration (optional)**: By default, Open WebUI starts standalone without any pre-configured backends. To automatically configure Ollama as the default backend, set `auto_configure_ollama = true` in the `open-webui` service config:
+  ```toml
+  [services.open-webui]
+  auto_configure_ollama = true
+  ```
+  When enabled, airpods injects `OLLAMA_BASE_URL`, `OPENAI_API_BASE_URL`, and `OPENAI_API_KEY` environment variables pointing to the local Ollama instance. When disabled (default), users can manually configure backends through the Open WebUI admin panel or use plugins to connect to other services.
 - Network: ensure Open WebUI shares the user-defined Podman network with Ollama, llama.cpp, ComfyUI so plugin HTTP calls resolve via service aliases.
-- Admin setup: enable Functions/Tools/Pipelines in the Admin Panel; import plugins from the community or mount custom ones into Open WebUI’s plugin directory if desired (managed manually or via future helper scripts).
+- Admin setup: enable Functions/Tools/Pipelines in the Admin Panel; import plugins from the community or mount custom ones into Open WebUI's plugin directory if desired (managed manually or via future helper scripts).
 - Security: when gateway auth is enabled, keep Open WebUI internal-only; plugins that need external internet should be reviewed, as they execute code in the server runtime.
 
 ## Utility As A Service

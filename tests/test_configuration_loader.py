@@ -64,11 +64,27 @@ def test_cli_config_max_concurrent_bounds():
     with pytest.raises(ValidationError):
         CLIConfig(max_concurrent_pulls=11)
 
+
+def test_open_webui_no_ollama_by_default():
+    """Test that Open WebUI doesn't have Ollama env vars by default."""
     config = AirpodsConfig.from_dict(deepcopy(DEFAULT_CONFIG_DICT))
     resolved = resolve_templates(config)
 
-    assert (
-        resolved.services["open-webui"].env["OPENAI_API_BASE_URL"]
-        == "http://localhost:11434/v1"
-    )
-    assert resolved.services["open-webui"].env["OPENAI_API_KEY"] == "ollama"
+    # By default, auto_configure_ollama is False
+    assert resolved.services["open-webui"].auto_configure_ollama is False
+
+    # Ollama env vars should NOT be present in defaults
+    assert "OLLAMA_BASE_URL" not in resolved.services["open-webui"].env
+    assert "OPENAI_API_BASE_URL" not in resolved.services["open-webui"].env
+    assert "OPENAI_API_KEY" not in resolved.services["open-webui"].env
+
+
+def test_open_webui_ollama_integration_when_enabled():
+    """Test that Open WebUI gets Ollama env vars when auto_configure_ollama is enabled."""
+    config_dict = deepcopy(DEFAULT_CONFIG_DICT)
+    config_dict["services"]["open-webui"]["auto_configure_ollama"] = True
+
+    config = AirpodsConfig.from_dict(config_dict)
+    resolved = resolve_templates(config)
+
+    assert resolved.services["open-webui"].auto_configure_ollama is True
