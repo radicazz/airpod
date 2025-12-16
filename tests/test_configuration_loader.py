@@ -37,6 +37,7 @@ def test_locate_prefers_repo_over_xdg(tmp_path, monkeypatch):
 
     # Clear runtime mode cache to pick up the env var
     from airpods import runtime_mode
+
     runtime_mode.is_dev_mode.cache_clear()
 
     assert loader_module.locate_config_file() == repo_config.resolve()

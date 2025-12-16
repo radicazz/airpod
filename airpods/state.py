@@ -22,12 +22,12 @@ def _detect_repo_root() -> Optional[Path]:
 def state_root() -> Path:
     if _STATE_ROOT_OVERRIDE is not None:
         return _STATE_ROOT_OVERRIDE
-    
+
     # Check for explicit AIRPODS_HOME override
     env = os.environ.get(STATE_ROOT_ENV)
     if env:
         return Path(env).expanduser().resolve()
-    
+
     # Development mode: always use repo root
     if is_dev_mode():
         repo_root = _detect_repo_root()
@@ -35,7 +35,7 @@ def state_root() -> Path:
             return repo_root
         # Fallback if repo root can't be detected in dev mode
         return Path.cwd()
-    
+
     # Production mode: always use XDG directories (never repo root)
     xdg_base = os.environ.get("XDG_CONFIG_HOME")
     if xdg_base:
