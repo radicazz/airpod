@@ -153,6 +153,13 @@ def _service_spec_from_config(
             if key not in env:
                 env[key] = value
 
+    # Set userns_mode for mmartial ComfyUI (needs keep-id for proper file ownership)
+    userns_mode = None
+    if name == "comfyui":
+        provider = _get_comfyui_provider(config)
+        if provider == "mmartial":
+            userns_mode = "keep-id"
+
     return ServiceSpec(
         name=name,
         pod=service.pod,
@@ -166,6 +173,7 @@ def _service_spec_from_config(
         needs_gpu=service.gpu.enabled,
         health_path=service.health.path,
         force_cpu=service.gpu.force_cpu,
+        userns_mode=userns_mode,
     )
 
 

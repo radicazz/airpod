@@ -155,6 +155,7 @@ def run_container(
     restart_policy: str = "unless-stopped",
     gpu_device_flag: Optional[str] = None,
     pids_limit: int = 2048,
+    userns_mode: Optional[str] = None,
 ) -> bool:
     existed = container_exists(name)
 
@@ -182,6 +183,9 @@ def run_container(
         "--pod",
         pod,
     ]
+
+    if userns_mode:
+        args.extend(["--userns", userns_mode])
 
     for key, val in env.items():
         args.extend(["-e", f"{key}={val}"])
