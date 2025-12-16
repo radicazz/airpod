@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Dict, Literal, Optional, Tuple
 
+import os
+
 from airpods.cuda import (
     CUDA_COMPATIBILITY_MAP,
     DEFAULT_CUDA_VERSION,
@@ -120,6 +122,10 @@ def get_default_env(provider: ComfyProvider) -> Dict[str, str]:
         Dictionary of environment variables
     """
     if provider == "mmartial":
+        # Auto-detect UID/GID for proper file ownership
+        uid = os.getuid()
+        gid = os.getgid()
+
         return {
             "USE_UV": "true",
             "PREINSTALL_TORCH": "true",
@@ -128,6 +134,8 @@ def get_default_env(provider: ComfyProvider) -> Dict[str, str]:
             "SECURITY_LEVEL": "weak",
             "NVIDIA_VISIBLE_DEVICES": "all",
             "NVIDIA_DRIVER_CAPABILITIES": "all",
+            "WANTED_UID": str(uid),
+            "WANTED_GID": str(gid),
         }
 
     return {}
