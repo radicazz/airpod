@@ -11,7 +11,7 @@ The `[runtime.network]` table controls how the shared pod network is created:
 driver = "bridge"
 subnet = "10.89.0.0/16"                  # optional custom subnet
 gateway = "10.89.0.1"                    # optional custom gateway
-dns_servers = ["8.8.8.8", "1.1.1.1"]     # optional custom DNS
+dns_servers = ["8.8.8.8", "1.1.1.1"]     # DNS servers (required for external connectivity)
 ipv6 = false
 internal = false
 ```
@@ -19,11 +19,26 @@ internal = false
 - `driver`: Network driver (default: `"bridge"`).
 - `subnet`: Custom subnet in CIDR format (for example, `"10.89.0.0/16"`).
 - `gateway`: Custom gateway IP on the chosen subnet.
-- `dns_servers`: List of DNS servers used by containers on this network.
+- `dns_servers`: List of DNS servers used by containers on this network. **Important**: Without DNS servers configured, containers cannot resolve external domain names and will have timeout issues when downloading models, images, or accessing external APIs. Default: `["8.8.8.8", "1.1.1.1"]` (Google DNS and Cloudflare DNS).
 - `ipv6`: Enable IPv6 networking for the pod network.
 - `internal`: Restrict external network access for increased isolation.
 
 These settings apply to all services managed by airpods because they share the same network.
+
+### Recreating the Network
+
+If you've updated DNS settings or other network configuration, you'll need to recreate the network for the changes to take effect:
+
+```bash
+# Stop all services
+airpods stop
+
+# Remove the network (this is safe - volumes and data are preserved)
+airpods clean --network
+
+# Start services again - the network will be recreated with new settings
+airpods start
+```
 
 ## Service Network Aliases
 

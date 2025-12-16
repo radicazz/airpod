@@ -45,7 +45,11 @@ class ContainerRuntime(Protocol):
         ...
 
     def ensure_pod(
-        self, pod: str, ports: Iterable[tuple[int, int]], network: str
+        self,
+        pod: str,
+        ports: Iterable[tuple[int, int]],
+        network: str,
+        dns_servers: list[str] | None = None,
     ) -> bool:
         """Create a pod if it doesn't exist.
 
@@ -174,10 +178,14 @@ class PodmanRuntime:
             raise ContainerRuntimeError(str(exc)) from exc
 
     def ensure_pod(
-        self, pod: str, ports: Iterable[tuple[int, int]], network: str
+        self,
+        pod: str,
+        ports: Iterable[tuple[int, int]],
+        network: str,
+        dns_servers: list[str] | None = None,
     ) -> bool:
         try:
-            return podman.ensure_pod(pod, ports, network)
+            return podman.ensure_pod(pod, ports, network, dns_servers=dns_servers)
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc
 

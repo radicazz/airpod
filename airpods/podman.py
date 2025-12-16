@@ -105,8 +105,12 @@ def ensure_network(
         return False
     args = ["network", "create"]
     args.extend(["--driver", driver])
+    # Always specify a subnet to ensure IPv4 is enabled
+    # If no subnet provided, use a safe default range
     if subnet:
         args.extend(["--subnet", subnet])
+    else:
+        args.extend(["--subnet", "10.89.0.0/16"])
     if gateway:
         args.extend(["--gateway", gateway])
     if dns_servers:
@@ -171,13 +175,19 @@ def container_exists(name: str) -> bool:
 
 
 def ensure_pod(
-    pod: str, ports: Iterable[tuple[int, int]], network: str = "airpods_network"
+    pod: str,
+    ports: Iterable[tuple[int, int]],
+    network: str = "airpods_network",
+    dns_servers: list[str] | None = None,
 ) -> bool:
     if pod_exists(pod):
         return False
     args = ["pod", "create", "--name", pod, "--network", network]
     for host, container in ports:
         args.extend(["-p", f"{host}:{container}"])
+    if dns_servers:
+        for dns in dns_servers:
+            args.extend(["--dns", dns])
     try:
         _run(args, capture=False)
     except subprocess.CalledProcessError as exc:

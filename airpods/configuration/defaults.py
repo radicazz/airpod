@@ -12,7 +12,8 @@ DEFAULT_CONFIG_DICT = {
         "network_name": "airpods_network",
         "network": {
             "driver": "bridge",
-            "dns_servers": [],
+            "subnet": "10.89.0.0/16",
+            "dns_servers": ["8.8.8.8", "1.1.1.1"],
             "ipv6": False,
             "internal": False,
         },
