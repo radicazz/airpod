@@ -1,6 +1,6 @@
 # docs/plans/service-comfyui
 
-**STATUS:** IMPLEMENTED (v0.5.0) - Service enabled by default using yanwk/comfyui-boot community image
+**STATUS:** ENHANCED (v0.10.0) - Dual-provider support: yanwk/comfyui-boot (newer GPUs) + mmartial/comfyui-nvidia-docker (GTX 10xx/Pascal)
 
 ## Purpose
 
@@ -42,18 +42,48 @@
 
 ## Configuration & Deployment Notes
 
-### Current Implementation (v0.5.0+)
+### Current Implementation (v0.10.0+)
 
-- **Image**: `docker.io/yanwk/comfyui-boot:cu128-slim`
-  - Community-maintained image with CUDA 12.8, Python 3.12
-  - Includes ComfyUI + ComfyUI-Manager out of the box
-  - Alternative to build your own: future plan is to fork and customize
-  - Other variants: `cu126-slim`, `cu128-megapak`, `rocm`, `xpu`, `cpu`
+**Dual Provider Support:**
+
+Airpods now automatically selects the optimal ComfyUI image based on GPU architecture:
+
+#### yanwk/comfyui-boot (Default for Turing 7.x+)
+- **Images**:
+  - `docker.io/yanwk/comfyui-boot:cu128-slim` (Ampere/Hopper - 8.x/9.x)
+  - `docker.io/yanwk/comfyui-boot:cu126-megapak` (fallback/general purpose)
+  - `docker.io/yanwk/comfyui-boot:cu130-slim` (latest architectures)
+- **Target GPUs**: RTX 20xx, 30xx, 40xx, A-series (Turing/Ampere/Hopper)
+- **Volumes**: `/workspace` (workspace), `/root/ComfyUI/models` (models)
+- **Environment**: Minimal configuration
+- **User mapping**: Not required (runs as root)
+
+#### mmartial/comfyui-nvidia-docker (Auto-selected for Pascal 6.x and older)
+- **Images**:
+  - `docker.io/mmartial/comfyui-nvidia-docker:ubuntu24_cuda12.6.3-20251211` (Pascal/GTX 10xx - 6.x)
+  - `docker.io/mmartial/comfyui-nvidia-docker:ubuntu24_cuda12.8-20251211` (newer cards needing cu128)
+- **Target GPUs**: GTX 10xx series (1050, 1060, 1070, 1080 Ti), older Maxwell/Kepler
+- **Volumes**: `/basedir` (unified models+output), `/comfy/mnt` (runtime)
+- **Environment**: Enhanced with UV pip, PyTorch pre-install, security controls
+- **User mapping**: `userns_mode: keep-id` + auto-detected UID/GID for proper file ownership
+- **Key features**:
+  - CUDA 12.6.3 support for sm_61 (Pascal compute capability)
+  - Pre-installs PyTorch with proper CUDA 12.6 support
+  - Uses UV for faster package installs
+  - Automatic file ownership matching via WANTED_UID/WANTED_GID
+
+**Common Settings:**
 - **Port**: `8188` (ComfyUI standard) mapped to host
-- **Volume**: `airpods_comfyui_models` → `/root/ComfyUI/models`
 - **GPU**: Auto-detected and enabled; CPU fallback available
 - **Health**: HTTP check on `/`
 - **Network**: Internal alias `comfyui` for service-to-service calls
+- **PID limit**: 2048 (prevents fork bombs)
+
+**Provider Selection Logic:**
+- Compute capability 6.x and below → mmartial (Pascal/GTX 10xx optimized)
+- Compute capability 7.x and above → yanwk (Turing/Ampere/Hopper)
+- No GPU / detection failure → yanwk (default)
+- Manual override available via `runtime.comfyui_provider` config
 
 ### Legacy Documentation
 
