@@ -75,19 +75,40 @@ def detect_install_source() -> InstallSource:
 
 
 def fetch_latest_release(*, timeout_seconds: float = 1.5) -> ReleaseInfo:
-    url = f"https://api.github.com/repos/{_REPO}/releases/latest"
+    """Fetch latest version from main branch pyproject.toml.
+
+    This is more reliable than GitHub releases API since the project doesn't
+    always create releases for every version bump.
+    """
+    url = f"https://raw.githubusercontent.com/{_REPO}/main/pyproject.toml"
     resp = requests.get(
         url,
         timeout=timeout_seconds,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "airpods"},
+        headers={"User-Agent": "airpods"},
     )
     resp.raise_for_status()
-    data: Any = resp.json()
-    tag = str(data.get("tag_name") or "").strip()
-    html_url = str(data.get("html_url") or "").strip()
-    if not tag:
-        raise RuntimeError("could not determine latest release tag")
-    version = tag[1:] if tag.startswith("v") else tag
+
+    # Parse version from pyproject.toml
+    # Looking for: version = "0.19.1"
+    content = resp.text
+    version = None
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith("version") and "=" in line:
+            # Extract version string: version = "0.19.1" -> 0.19.1
+            parts = line.split("=", 1)
+            if len(parts) == 2:
+                version_str = parts[1].strip().strip('"').strip("'")
+                if version_str and version_str[0].isdigit():
+                    version = version_str
+                    break
+
+    if not version:
+        raise RuntimeError("could not parse version from pyproject.toml")
+
+    tag = f"v{version}" if not version.startswith("v") else version
+    html_url = f"https://github.com/{_REPO}/tree/main"
+
     return ReleaseInfo(tag=tag, version=version, html_url=html_url)
 
 

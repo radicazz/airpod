@@ -11,6 +11,7 @@ from airpods.updates import (
     ReleaseInfo,
     check_for_update,
     detect_install_source,
+    fetch_latest_release,
     format_upgrade_hint,
     is_update_available,
 )
@@ -71,11 +72,33 @@ def test_detect_install_source_reads_direct_url_metadata():
             }
         }
         return SimpleNamespace(
-            read_text=lambda path: json.dumps(direct_url)
-            if path == "direct_url.json"
-            else None
+            read_text=lambda path: (
+                json.dumps(direct_url) if path == "direct_url.json" else None
+            )
         )
 
     with patch("importlib.metadata.distribution", _fake_distribution):
         src = detect_install_source()
         assert src.kind == "nightly"
+
+
+def test_fetch_latest_release_parses_pyproject_toml():
+    """Test that fetch_latest_release correctly parses version from pyproject.toml."""
+    mock_response = type(
+        "Response",
+        (),
+        {
+            "text": """[project]
+name = "airpods"
+version = "1.2.3"
+description = "Test"
+""",
+            "raise_for_status": lambda self: None,
+        },
+    )()
+
+    with patch("airpods.updates.requests.get", return_value=mock_response):
+        result = fetch_latest_release()
+        assert result.version == "1.2.3"
+        assert result.tag == "v1.2.3"
+        assert "github.com/radicazz/airpods" in result.html_url
