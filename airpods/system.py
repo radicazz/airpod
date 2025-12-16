@@ -149,3 +149,87 @@ def detect_cuda_compute_capability() -> Tuple[bool, str, Optional[Tuple[int, int
         # Fallback to just GPU name if compute capability parsing fails
         gpu_name = lines[0].split(",")[0].strip() if "," in lines[0] else lines[0]
         return False, f"{gpu_name} (compute capability parse failed: {exc})", None
+
+
+def detect_vpn_mtu_issues() -> Tuple[bool, Optional[str], Optional[int], bool]:
+    """Detect VPN interfaces with low MTU and check for MSS clamping.
+
+    Returns:
+        (has_vpn_issue, vpn_interface, mtu, has_mss_clamping)
+
+        has_vpn_issue: True if a VPN interface with MTU < 1500 is detected
+        vpn_interface: Name of the first VPN interface found, or None
+        mtu: MTU value of the VPN interface, or None
+        has_mss_clamping: True if TCP MSS clamping rules are configured
+    """
+    from pathlib import Path
+
+    # Common VPN interface patterns
+    vpn_patterns = ["wg", "tun", "ppp", "vpn", "mullvad", "proton"]
+
+    # Scan network interfaces for VPN with low MTU
+    vpn_interface = None
+    vpn_mtu = None
+
+    try:
+        net_dir = Path("/sys/class/net")
+        if not net_dir.exists():
+            return False, None, None, False
+
+        for iface_dir in net_dir.iterdir():
+            if not iface_dir.is_dir():
+                continue
+
+            iface_name = iface_dir.name
+            # Skip loopback and common non-VPN interfaces
+            if iface_name in ("lo", "docker0", "podman0"):
+                continue
+
+            # Read MTU
+            mtu_file = iface_dir / "mtu"
+            if not mtu_file.exists():
+                continue
+
+            try:
+                mtu = int(mtu_file.read_text().strip())
+            except (ValueError, OSError):
+                continue
+
+            # Check if this looks like a VPN interface with low MTU
+            is_vpn_pattern = any(
+                pattern in iface_name.lower() for pattern in vpn_patterns
+            )
+            if is_vpn_pattern and mtu < 1500:
+                vpn_interface = iface_name
+                vpn_mtu = mtu
+                break
+
+    except OSError:
+        # Can't read /sys/class/net, assume no VPN issue
+        return False, None, None, False
+
+    if not vpn_interface:
+        return False, None, None, False
+
+    # Check for existing MSS clamping rules
+    has_mss_clamping = False
+    try:
+        result = subprocess.run(
+            ["iptables", "-t", "mangle", "-S"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            output = result.stdout
+            # Look for TCPMSS rules targeting our VPN interface
+            for line in output.splitlines():
+                if "TCPMSS" in line and vpn_interface in line:
+                    has_mss_clamping = True
+                    break
+    except (FileNotFoundError, PermissionError):
+        # iptables not available or no permission, assume no clamping
+        pass
+
+    return True, vpn_interface, vpn_mtu, has_mss_clamping

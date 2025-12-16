@@ -29,7 +29,26 @@ podman exec comfyui-0 sh -c 'curl -I --max-time 10 https://pypi.org/simple/'
 
 **Solution 1: TCP MSS Clamping** (System-wide, requires root):
 
-Add iptables rules to clamp the Maximum Segment Size (MSS) to fit within your VPN's MTU:
+Use the included `mss-clamping` script to automatically configure MSS clamping:
+
+```bash
+# Check for VPN MTU issues
+scripts/mss-clamping check
+
+# Enable MSS clamping (auto-detects VPN interface)
+sudo scripts/mss-clamping enable
+
+# Or specify interface manually
+sudo scripts/mss-clamping enable wg0-mullvad
+
+# Check status
+scripts/mss-clamping status
+
+# Disable if needed
+sudo scripts/mss-clamping disable
+```
+
+**Manual iptables rules** (if you prefer manual configuration):
 
 ```bash
 # Replace wg0-mullvad with your VPN interface name

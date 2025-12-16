@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+# mss-clamping - Manage TCP MSS clamping for VPN interfaces
+#
+# This script helps configure iptables rules to clamp TCP Maximum Segment Size (MSS)
+# for VPN interfaces with low MTU, preventing PMTU blackhole issues that cause
+# HTTPS timeouts in containers using bridge networking.
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+DIM='\033[2m'
+NC='\033[0m' # No Color
+
+# Common VPN interface patterns
+VPN_PATTERNS=("wg" "tun" "ppp" "vpn" "mullvad" "proton")
+
+print_error() {
+    echo -e "${RED}Error:${NC} $1" >&2
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ${NC} $1"
+}
+
+print_dim() {
+    echo -e "${DIM}$1${NC}"
+}
+
+# Detect VPN interfaces with MTU < 1500
+detect_vpn_interface() {
+    local vpn_iface=""
+    local vpn_mtu=""
+
+    for iface in /sys/class/net/*; do
+        [ -d "$iface" ] || continue
+        local name=$(basename "$iface")
+
+        # Skip common non-VPN interfaces
+        [[ "$name" == "lo" || "$name" == "docker0" || "$name" == "podman0" ]] && continue
+
+        # Read MTU
+        [ -f "$iface/mtu" ] || continue
+        local mtu=$(cat "$iface/mtu" 2>/dev/null || echo "1500")
+
+        # Check if this looks like a VPN interface with low MTU
+        for pattern in "${VPN_PATTERNS[@]}"; do
+            if [[ "$name" == *"$pattern"* ]] && [ "$mtu" -lt 1500 ]; then
+                vpn_iface="$name"
+                vpn_mtu="$mtu"
+                break 2
+            fi
+        done
+    done
+
+    if [ -n "$vpn_iface" ]; then
+        echo "$vpn_iface:$vpn_mtu"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Check if MSS clamping rules exist for an interface
+has_mss_clamping() {
+    local iface="$1"
+    if ! command -v iptables &> /dev/null; then
+        return 1
+    fi
+
+    iptables -t mangle -S 2>/dev/null | grep -q "TCPMSS.*$iface" && return 0 || return 1
+}
+
+# Show current status
+cmd_check() {
+    print_info "Checking for VPN interfaces with MTU < 1500..."
+    echo
+
+    if vpn_info=$(detect_vpn_interface); then
+        IFS=':' read -r iface mtu <<< "$vpn_info"
+        print_warning "VPN interface detected: $iface (MTU $mtu)"
+
+        if has_mss_clamping "$iface"; then
+            print_success "TCP MSS clamping is configured for $iface"
+        else
+            print_warning "TCP MSS clamping is NOT configured for $iface"
+            echo
+            print_dim "This may cause HTTPS timeouts in containers using bridge networking."
+            print_dim "Run 'sudo $(basename "$0") enable' to fix this issue."
+        fi
+    else
+        print_success "No VPN interfaces with low MTU detected"
+    fi
+}
+
+# Show active MSS clamping rules
+cmd_status() {
+    if ! command -v iptables &> /dev/null; then
+        print_error "iptables not found"
+        exit 1
+    fi
+
+    print_info "Active TCP MSS clamping rules:"
+    echo
+
+    local rules=$(iptables -t mangle -S 2>/dev/null | grep TCPMSS || true)
+    if [ -z "$rules" ]; then
+        print_dim "No MSS clamping rules configured"
+    else
+        echo "$rules"
+    fi
+}
+
+# Enable MSS clamping
+cmd_enable() {
+    local iface="$1"
+
+    # Check for root
+    if [ "$EUID" -ne 0 ]; then
+        print_error "This command requires root privileges"
+        echo "Run: sudo $(basename "$0") enable${iface:+ $iface}"
+        exit 1
+    fi
+
+    # Auto-detect interface if not specified
+    if [ -z "$iface" ]; then
+        if vpn_info=$(detect_vpn_interface); then
+            IFS=':' read -r iface mtu <<< "$vpn_info"
+            print_info "Auto-detected VPN interface: $iface (MTU $mtu)"
+        else
+            print_error "No VPN interface detected. Specify interface manually:"
+            echo "  sudo $(basename "$0") enable <interface>"
+            exit 1
+        fi
+    fi
+
+    # Check if interface exists
+    if [ ! -d "/sys/class/net/$iface" ]; then
+        print_error "Interface '$iface' does not exist"
+        exit 1
+    fi
+
+    # Check if rules already exist (idempotent)
+    local forward_exists=false
+    local output_exists=false
+
+    if iptables -t mangle -C FORWARD -o "$iface" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; then
+        forward_exists=true
+    fi
+
+    if iptables -t mangle -C OUTPUT -o "$iface" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; then
+        output_exists=true
+    fi
+
+    # Add rules if they don't exist
+    if [ "$forward_exists" = false ]; then
+        iptables -t mangle -A FORWARD -o "$iface" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+        print_success "Added FORWARD rule for $iface"
+    else
+        print_dim "FORWARD rule already exists for $iface"
+    fi
+
+    if [ "$output_exists" = false ]; then
+        iptables -t mangle -A OUTPUT -o "$iface" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+        print_success "Added OUTPUT rule for $iface"
+    else
+        print_dim "OUTPUT rule already exists for $iface"
+    fi
+
+    if [ "$forward_exists" = false ] || [ "$output_exists" = false ]; then
+        echo
+        print_success "TCP MSS clamping enabled for $iface"
+        echo
+        print_dim "Note: These rules will be lost on reboot. To make them persistent:"
+        print_dim "  • Debian/Ubuntu: Install iptables-persistent"
+        print_dim "  • RHEL/Fedora: Use firewalld or save with 'iptables-save'"
+    else
+        print_success "TCP MSS clamping already fully configured for $iface"
+    fi
+}
+
+# Disable MSS clamping
+cmd_disable() {
+    local iface="$1"
+
+    # Check for root
+    if [ "$EUID" -ne 0 ]; then
+        print_error "This command requires root privileges"
+        echo "Run: sudo $(basename "$0") disable${iface:+ $iface}"
+        exit 1
+    fi
+
+    # Auto-detect interface if not specified
+    if [ -z "$iface" ]; then
+        if vpn_info=$(detect_vpn_interface); then
+            IFS=':' read -r iface mtu <<< "$vpn_info"
+            print_info "Auto-detected VPN interface: $iface"
+        else
+            print_error "No VPN interface detected. Specify interface manually:"
+            echo "  sudo $(basename "$0") disable <interface>"
+            exit 1
+        fi
+    fi
+
+    # Remove rules (idempotent - don't fail if they don't exist)
+    local removed=false
+
+    if iptables -t mangle -D FORWARD -o "$iface" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; then
+        print_success "Removed FORWARD rule for $iface"
+        removed=true
+    fi
+
+    if iptables -t mangle -D OUTPUT -o "$iface" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; then
+        print_success "Removed OUTPUT rule for $iface"
+        removed=true
+    fi
+
+    if [ "$removed" = true ]; then
+        print_success "TCP MSS clamping disabled for $iface"
+    else
+        print_dim "No MSS clamping rules found for $iface"
+    fi
+}
+
+# Show help
+cmd_help() {
+    cat << EOF
+Usage: $(basename "$0") <command> [options]
+
+Manage TCP MSS clamping for VPN interfaces to prevent PMTU blackhole issues.
+
+Commands:
+  check              Detect VPN interfaces and show MSS clamping status
+  status             Show active iptables MSS clamping rules
+  enable [interface] Add MSS clamping rules (auto-detects VPN if not specified)
+  disable [interface] Remove MSS clamping rules
+  help               Show this help message
+
+Examples:
+  $(basename "$0") check                     # Check for VPN MTU issues
+  sudo $(basename "$0") enable                # Auto-detect VPN and enable clamping
+  sudo $(basename "$0") enable wg0-mullvad    # Enable for specific interface
+  sudo $(basename "$0") disable               # Auto-detect VPN and disable clamping
+  $(basename "$0") status                     # Show active rules
+
+For more information, see: docs/troubleshooting-network-vpn.md
+EOF
+}
+
+# Main command dispatcher
+main() {
+    local cmd="${1:-check}"
+
+    case "$cmd" in
+        check)
+            cmd_check
+            ;;
+        status)
+            cmd_status
+            ;;
+        enable)
+            cmd_enable "${2:-}"
+            ;;
+        disable)
+            cmd_disable "${2:-}"
+            ;;
+        help|--help|-h)
+            cmd_help
+            ;;
+        *)
+            print_error "Unknown command: $cmd"
+            echo
+            cmd_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
