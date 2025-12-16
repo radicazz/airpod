@@ -18,6 +18,7 @@ class RuntimeConfig(BaseModel):
         "unless-stopped"
     )
     cuda_version: Literal["auto", "cu118", "cu126", "cu128", "cu130", "cpu"] = "auto"
+    comfyui_provider: Literal["auto", "yanwk", "mmartial"] = "auto"
 
 
 class CLIConfig(BaseModel):

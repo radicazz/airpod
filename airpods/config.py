@@ -95,9 +95,11 @@ def _resolve_cuda_image(
 
 
 def _get_comfyui_provider(config: AirpodsConfig):
-    """Detect ComfyUI provider based on GPU capability."""
+    """Detect ComfyUI provider based on GPU capability and config."""
     has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
-    return select_provider(compute_cap, "auto")  # type: ignore
+    # Use runtime.comfyui_provider setting (defaults to "auto")
+    provider_pref = config.runtime.comfyui_provider
+    return select_provider(compute_cap, provider_pref)  # type: ignore
 
 
 def _get_comfyui_provider_env(config: AirpodsConfig) -> Dict[str, str]:
