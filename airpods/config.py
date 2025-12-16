@@ -78,8 +78,9 @@ def _resolve_cuda_image(
             selection_source = f"fallback (GPU detection failed: {gpu_name})"
 
     # Select provider (yanwk vs mmartial) based on GPU capability
-    # Auto-selects mmartial for Pascal (6.x) and older, yanwk for newer
-    provider = select_provider(compute_cap, "auto")  # type: ignore
+    # Respects user preference from config, or auto-selects based on GPU
+    provider_pref = config.runtime.comfyui_provider
+    provider = select_provider(compute_cap, provider_pref)
 
     # Force CPU if GPU is disabled for this service
     force_cpu = service.gpu.force_cpu or not service.gpu.enabled
@@ -99,7 +100,7 @@ def _get_comfyui_provider(config: AirpodsConfig):
     has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
     # Use runtime.comfyui_provider setting (defaults to "auto")
     provider_pref = config.runtime.comfyui_provider
-    return select_provider(compute_cap, provider_pref)  # type: ignore
+    return select_provider(compute_cap, provider_pref)
 
 
 def _get_comfyui_provider_env(config: AirpodsConfig) -> Dict[str, str]:

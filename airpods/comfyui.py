@@ -47,8 +47,11 @@ def select_provider(
     Returns:
         Provider to use: "yanwk" or "mmartial"
     """
-    if provider != "auto":
-        return provider  # type: ignore
+    # Handle explicit provider selection (type-safe)
+    if provider == "yanwk":
+        return "yanwk"
+    if provider == "mmartial":
+        return "mmartial"
 
     # Auto-selection: use mmartial for Pascal (6.x) and older that benefit from CUDA 12.6
     # Use yanwk for newer GPUs (7.x+) that work well with latest CUDA
