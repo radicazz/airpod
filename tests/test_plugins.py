@@ -141,7 +141,7 @@ def test_resolve_plugin_owner_auto_prefers_admin(
     assert len(calls) == 1
 
 
-def test_resolve_plugin_owner_auto_falls_back_to_airpods(
+def test_resolve_plugin_owner_auto_creates_default_admin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class DummyResult:
@@ -151,7 +151,8 @@ def test_resolve_plugin_owner_auto_falls_back_to_airpods(
         def __init__(self, stdout: str):
             self.stdout = stdout
 
-    outputs = ["", "airpods-system\n"]
+    # Outputs: no existing admin, no users exist, create default admin
+    outputs = ["", "", "test-admin-id\n"]
 
     def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
         return DummyResult(outputs.pop(0) if outputs else "")
@@ -161,7 +162,7 @@ def test_resolve_plugin_owner_auto_falls_back_to_airpods(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     owner = plugins.resolve_plugin_owner_user_id("open-webui-0", mode="auto")
-    assert owner == "airpods-system"
+    assert owner == "test-admin-id"
 
 
 def test_resolve_plugin_owner_admin_mode_uses_system_when_missing(

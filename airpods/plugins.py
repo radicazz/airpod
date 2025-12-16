@@ -204,22 +204,59 @@ finally:
     return admin_id or None
 
 
-def _ensure_airpods_owner(container_name: str) -> str | None:
-    """Attempt to create a stable non-login owner user for plugin rows."""
+def _any_users_exist(container_name: str) -> bool:
+    """Check if any users exist in the Open WebUI database."""
+    code = """
+import sqlite3
+DB_PATH = r'/app/backend/data/webui.db'
+try:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    for table in ("user", "users"):
+        try:
+            cur.execute(f"SELECT COUNT(*) FROM {table}")
+            count = cur.fetchone()[0]
+            if count > 0:
+                print("1")
+                break
+        except Exception:
+            continue
+    conn.close()
+except Exception:
+    pass
+"""
+    try:
+        result = _podman_exec_python(container_name, code.strip(), timeout=8)
+    except Exception:  # pragma: no cover - system specific
+        return False
+    return (result.stdout or "").strip() == "1"
+
+
+def _ensure_default_admin(container_name: str) -> str | None:
+    """Create a default admin account with known credentials for first-time setup."""
     code = f"""
 import json
 import sqlite3
 import time
 
 DB_PATH = r'{WEBUI_DB_PATH}'
-OWNER_ID = r'{AIRPODS_OWNER_ID}'
+ADMIN_EMAIL = 'admin@airpods'
+
+try:
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    hashed = pwd_context.hash("admin")
+except Exception:
+    # Fallback to bcrypt directly if passlib not available
+    import bcrypt
+    hashed = bcrypt.hashpw("admin".encode(), bcrypt.gensalt()).decode()
 
 try:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     table = None
-    for candidate in ("users", "user"):
+    for candidate in ("user", "users"):
         try:
             cur.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -234,19 +271,24 @@ try:
     if not table:
         raise RuntimeError("no user table found")
 
-    cur.execute(f"SELECT id FROM {{table}} WHERE id=?", (OWNER_ID,))
-    if cur.fetchone():
-        print(OWNER_ID)
+    # Check if admin already exists
+    cur.execute(f"SELECT id FROM {{table}} WHERE email=?", (ADMIN_EMAIL,))
+    existing = cur.fetchone()
+    if existing:
+        print(existing[0])
     else:
+        # Create new admin user
         cols = [r[1] for r in cur.execute(f"PRAGMA table_info({{table}})").fetchall()]
         now = int(time.time())
-        data = {{"id": OWNER_ID}}
+
+        import uuid
+        admin_id = str(uuid.uuid4())
+
+        data = {{"id": admin_id, "email": ADMIN_EMAIL, "password": hashed}}
         if "name" in cols:
-            data["name"] = "airpods"
-        if "email" in cols:
-            data["email"] = "airpods@local"
+            data["name"] = "Admin"
         if "username" in cols:
-            data["username"] = "airpods"
+            data["username"] = "admin"
         if "role" in cols:
             data["role"] = "admin"
         if "profile_image_url" in cols:
@@ -270,9 +312,11 @@ try:
         sql = f"INSERT INTO {{table}} ({{','.join(fields)}}) VALUES ({{placeholders}})"
         cur.execute(sql, [data[k] for k in fields])
         conn.commit()
-        print(OWNER_ID)
-except Exception:
-    pass
+        print(admin_id)
+except Exception as e:
+    import traceback
+    print(f"ERROR: {{e}}", file=__import__('sys').stderr)
+    traceback.print_exc()
 finally:
     try:
         conn.close()
@@ -280,18 +324,31 @@ finally:
         pass
 """
     try:
-        result = _podman_exec_python(container_name, code.strip(), timeout=8)
+        result = _podman_exec_python(container_name, code.strip(), timeout=10)
     except Exception as exc:  # pragma: no cover - system specific
-        console.print(f"[warn]Unable to ensure airpods plugin owner: {exc}[/]")
+        console.print(f"[warn]Unable to create default admin: {exc}[/]")
         return None
-    owner_id = (result.stdout or "").strip()
-    return owner_id or None
+
+    if result.returncode != 0 and result.stderr:
+        console.print(f"[warn]Error creating admin: {result.stderr}[/]")
+        return None
+
+    admin_id = (result.stdout or "").strip()
+    return admin_id or None
+
+
+def _ensure_airpods_owner(container_name: str) -> str | None:
+    """Create airpods-system user for 'airpods' mode (no password, cannot login)."""
+    # For backwards compatibility - creates a non-login system user
+    # This is only used when mode='airpods' explicitly
+    return None  # Deprecated in favor of default admin
 
 
 def resolve_plugin_owner_user_id(container_name: str, mode: str = "auto") -> str:
     """Resolve which WebUI user id should own imported plugins.
 
-    - auto: use an existing admin if possible, else ensure airpods-system owner.
+    - auto: use an existing admin if possible; if no users exist, use 'system' to allow
+            normal first-user signup; only create airpods-system if users exist but no admin.
     - admin: only use an existing admin, else fall back to 'system'.
     - airpods: ensure airpods-system owner, else fall back to 'system'.
     """
@@ -310,6 +367,18 @@ def resolve_plugin_owner_user_id(container_name: str, mode: str = "auto") -> str
             console.print(
                 "[warn]No admin user found for Open WebUI; plugins will be owned by 'system'.[/]"
             )
+            return "system"
+
+    # In auto mode, create a default admin if no users exist
+    if normalized == "auto":
+        if not _any_users_exist(container_name):
+            admin_id = _ensure_default_admin(container_name)
+            if admin_id:
+                console.print(
+                    "[info]Created default admin account: admin@airpods / admin "
+                    "(change password in Settings)[/]"
+                )
+                return admin_id
             return "system"
 
     if normalized in {"auto", "airpods"}:

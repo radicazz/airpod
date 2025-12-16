@@ -8,15 +8,6 @@ DEFAULT_CONFIG_DICT = {
     },
     "runtime": {
         "prefer": "auto",
-        "host_gateway": "auto",
-        "network_name": "airpods_network",
-        "network": {
-            "driver": "bridge",
-            "subnet": "10.89.0.0/16",
-            "dns_servers": ["8.8.8.8", "1.1.1.1"],
-            "ipv6": False,
-            "internal": False,
-        },
         "gpu_device_flag": "auto",
         "restart_policy": "unless-stopped",
         "cuda_version": "auto",
@@ -28,7 +19,7 @@ DEFAULT_CONFIG_DICT = {
         "startup_timeout": 120,
         "startup_check_interval": 2.0,
         "max_concurrent_pulls": 3,
-        "plugin_owner": "airpods",
+        "plugin_owner": "auto",
         "auto_confirm": False,
         "debug": False,
     },
@@ -43,7 +34,6 @@ DEFAULT_CONFIG_DICT = {
             "image": "docker.io/ollama/ollama:latest",
             "pod": "ollama",
             "container": "ollama-0",
-            "network_aliases": ["ollama"],
             "ports": [{"host": 11434, "container": 11434}],
             "volumes": {
                 "data": {
@@ -66,7 +56,6 @@ DEFAULT_CONFIG_DICT = {
             "image": "ghcr.io/open-webui/open-webui:latest",
             "pod": "open-webui",
             "container": "open-webui-0",
-            "network_aliases": ["webui", "open-webui"],
             "ports": [{"host": 3000, "container": 8080}],
             "volumes": {
                 "data": {
@@ -81,10 +70,12 @@ DEFAULT_CONFIG_DICT = {
             "gpu": {"enabled": False, "force_cpu": False},
             "health": {"path": "/", "expected_status": [200, 399]},
             "env": {
-                "OLLAMA_BASE_URL": "http://ollama:{{services.ollama.ports.0.container}}",
+                # With host networking, container binds to PORT directly (no port mapping)
+                "PORT": "{{services.open-webui.ports.0.host}}",
+                "OLLAMA_BASE_URL": "http://localhost:{{services.ollama.ports.0.host}}",
                 # Avoid accidental calls to api.openai.com by default; point any OpenAI-compatible
                 # connection to the local Ollama OpenAI-compatible endpoint instead.
-                "OPENAI_API_BASE_URL": "http://ollama:{{services.ollama.ports.0.container}}/v1",
+                "OPENAI_API_BASE_URL": "http://localhost:{{services.ollama.ports.0.host}}/v1",
                 "OPENAI_API_KEY": "ollama",
                 "ENABLE_COMMUNITY_SHARING": "True",
             },
@@ -96,7 +87,6 @@ DEFAULT_CONFIG_DICT = {
             "image": "docker.io/yanwk/comfyui-boot:cu128-slim",
             "pod": "comfyui",
             "container": "comfyui-0",
-            "network_aliases": ["comfyui"],
             "ports": [{"host": 8188, "container": 8188}],
             "volumes": {
                 "workspace": {

@@ -83,55 +83,6 @@ def remove_volume(name: str) -> None:
         raise PodmanError(msg) from exc
 
 
-def network_exists(name: str) -> bool:
-    try:
-        _run(["network", "inspect", name])
-        return True
-    except subprocess.CalledProcessError:
-        return False
-
-
-def ensure_network(
-    name: str,
-    *,
-    driver: str = "bridge",
-    subnet: str | None = None,
-    gateway: str | None = None,
-    dns_servers: list[str] | None = None,
-    ipv6: bool = False,
-    internal: bool = False,
-) -> bool:
-    if network_exists(name):
-        return False
-    args = ["network", "create"]
-    args.extend(["--driver", driver])
-    # Always specify a subnet to ensure IPv4 is enabled
-    # If no subnet provided, use a safe default range
-    if subnet:
-        args.extend(["--subnet", subnet])
-    else:
-        args.extend(["--subnet", "10.89.0.0/16"])
-    if gateway:
-        args.extend(["--gateway", gateway])
-    if dns_servers:
-        for dns in dns_servers:
-            args.extend(["--dns", dns])
-    if ipv6:
-        args.append("--ipv6")
-    if internal:
-        args.append("--internal")
-    args.append(name)
-    try:
-        _run(args, capture=False)
-    except subprocess.CalledProcessError as exc:
-        detail = _format_exc_output(exc)
-        msg = f"failed to create network {name}"
-        if detail:
-            msg = f"{msg}: {detail}"
-        raise PodmanError(msg) from exc
-    return True
-
-
 def pull_image(image: str) -> None:
     try:
         _run(["pull", image], capture=False)
@@ -177,17 +128,11 @@ def container_exists(name: str) -> bool:
 def ensure_pod(
     pod: str,
     ports: Iterable[tuple[int, int]],
-    network: str = "airpods_network",
-    dns_servers: list[str] | None = None,
 ) -> bool:
     if pod_exists(pod):
         return False
-    args = ["pod", "create", "--name", pod, "--network", network]
-    for host, container in ports:
-        args.extend(["-p", f"{host}:{container}"])
-    if dns_servers:
-        for dns in dns_servers:
-            args.extend(["--dns", dns])
+    # Port mappings are not used with host networking; containers bind directly to host ports
+    args = ["pod", "create", "--name", pod, "--network", "host"]
     try:
         _run(args, capture=False)
     except subprocess.CalledProcessError as exc:
@@ -206,11 +151,9 @@ def run_container(
     image: str,
     env: Dict[str, str],
     volumes: Iterable[tuple[str, str]],
-    network_aliases: List[str] | None = None,
     gpu: bool = False,
     restart_policy: str = "unless-stopped",
     gpu_device_flag: Optional[str] = None,
-    network_mode: str = "pod",
     pids_limit: int = 2048,
 ) -> bool:
     existed = container_exists(name)
@@ -236,14 +179,9 @@ def run_container(
         restart_policy,
         "--pids-limit",
         str(pids_limit),
+        "--pod",
+        pod,
     ]
-
-    # Handle network mode
-    if network_mode == "host":
-        args.extend(["--network", "host"])
-    else:
-        # Use pod networking (default)
-        args.extend(["--pod", pod])
 
     for key, val in env.items():
         args.extend(["-e", f"{key}={val}"])
@@ -314,18 +252,6 @@ def remove_image(image: str) -> None:
         stdout = _format_exc_output(exc)
         if "image not known" not in stdout.lower():
             raise PodmanError(f"failed to remove image {image}: {stdout}") from exc
-
-
-def remove_network(name: str) -> None:
-    """Remove a Podman network."""
-    try:
-        _run(["network", "rm", "--force", name], capture=False)
-    except subprocess.CalledProcessError as exc:
-        detail = _format_exc_output(exc)
-        msg = f"failed to remove network {name}"
-        if detail:
-            msg = f"{msg}: {detail}"
-        raise PodmanError(msg) from exc
 
 
 def stream_logs(
