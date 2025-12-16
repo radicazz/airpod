@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -33,8 +34,8 @@ class CleanupPlan:
     def __init__(self):
         self.pods: list[tuple[str, str]] = []  # (name, pod_name)
         self.volumes: list[str] = []
-        self.bind_mounts: list[Path] = []
-        self.images: list[tuple[str, str]] = []  # (name, image)
+        self.bind_mounts: list[tuple[Path, int]] = []  # (path, size_bytes)
+        self.images: list[tuple[str, str, int]] = []  # (name, image, size_bytes)
         self.network: Optional[str] = None
         self.config_files: list[Path] = []
 
@@ -48,6 +49,54 @@ class CleanupPlan:
             or self.network
             or self.config_files
         )
+
+    def total_bytes(self) -> int:
+        """Calculate total bytes to be freed."""
+        total = 0
+        for _, size in self.bind_mounts:
+            total += size
+        for _, _, size in self.images:
+            total += size
+        return total
+
+
+def _get_dir_size(path: Path) -> int:
+    """Get total size of a directory in bytes."""
+    total = 0
+    try:
+        for dirpath, dirnames, filenames in os.walk(path):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                try:
+                    total += os.path.getsize(filepath)
+                except (OSError, FileNotFoundError):
+                    pass
+    except (OSError, PermissionError):
+        pass
+    return total
+
+
+def _parse_image_size(size_str: str) -> int:
+    """Parse podman image size string to bytes."""
+    try:
+        size_str = size_str.strip().upper()
+        multipliers = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+        for unit, mult in multipliers.items():
+            if size_str.endswith(unit):
+                num = float(size_str[: -len(unit)])
+                return int(num * mult)
+    except (ValueError, AttributeError):
+        pass
+    return 0
+
+
+def _format_bytes(bytes_count: int) -> str:
+    """Format bytes to human-readable string."""
+    for unit in ["B", "KB", "MB", "GB"]:
+        if bytes_count < 1024.0:
+            return f"{bytes_count:.1f}{unit}"
+        bytes_count /= 1024.0
+    return f"{bytes_count:.1f}TB"
 
 
 def _collect_cleanup_targets(
@@ -80,13 +129,15 @@ def _collect_cleanup_targets(
                     "comfyui",
                     "webui_plugins",
                 }:
-                    plan.bind_mounts.append(item)
+                    size_bytes = _get_dir_size(item)
+                    plan.bind_mounts.append((item, size_bytes))
 
     if images:
         for spec in specs:
-            size = manager.runtime.image_size(spec.image)
-            if size:
-                plan.images.append((spec.name, spec.image))
+            size_str = manager.runtime.image_size(spec.image)
+            if size_str:
+                size_bytes = _parse_image_size(size_str)
+                plan.images.append((spec.name, spec.image, size_bytes))
 
     if network:
         network_name = manager.network_name
@@ -125,15 +176,16 @@ def _show_cleanup_plan(plan: CleanupPlan, dry_run: bool = False) -> None:
 
     if plan.bind_mounts:
         lines.append("[cyan]Bind Mounts:[/]")
-        for mount in plan.bind_mounts:
-            lines.append(f"  • {mount}")
+        for mount, size_bytes in plan.bind_mounts:
+            size_str = _format_bytes(size_bytes) if size_bytes > 0 else "0B"
+            lines.append(f"  • {mount} ({size_str})")
         lines.append("")
 
     if plan.images:
         lines.append(f"[cyan]Images ({len(plan.images)}):[/]")
-        for name, image in plan.images:
-            size = manager.runtime.image_size(image) or "unknown size"
-            lines.append(f"  • {image} ({size})")
+        for name, image, size_bytes in plan.images:
+            size_str = _format_bytes(size_bytes) if size_bytes > 0 else "unknown size"
+            lines.append(f"  • {image} ({size_str})")
         lines.append("")
 
     if plan.network:
@@ -177,29 +229,33 @@ def _clean_volumes(plan: CleanupPlan) -> int:
     return count
 
 
-def _clean_bind_mounts(plan: CleanupPlan) -> int:
-    """Remove bind mount directories. Returns count removed."""
+def _clean_bind_mounts(plan: CleanupPlan) -> tuple[int, int]:
+    """Remove bind mount directories. Returns (count removed, bytes freed)."""
     count = 0
-    for mount in plan.bind_mounts:
+    bytes_freed = 0
+    for mount, size_bytes in plan.bind_mounts:
         try:
             if mount.exists():
                 shutil.rmtree(mount)
                 count += 1
+                bytes_freed += size_bytes
         except OSError as exc:
             console.print(f"[warn]Failed to remove {mount}: {exc}[/]")
-    return count
+    return count, bytes_freed
 
 
-def _clean_images(plan: CleanupPlan) -> int:
-    """Remove container images. Returns count removed."""
+def _clean_images(plan: CleanupPlan) -> tuple[int, int]:
+    """Remove container images. Returns (count removed, bytes freed)."""
     count = 0
-    for name, image in plan.images:
+    bytes_freed = 0
+    for name, image, size_bytes in plan.images:
         try:
             manager.runtime.remove_image(image)
             count += 1
+            bytes_freed += size_bytes
         except ContainerRuntimeError as exc:
             console.print(f"[warn]Failed to remove image {image}: {exc}[/]")
-    return count
+    return count, bytes_freed
 
 
 def _clean_network(plan: CleanupPlan) -> bool:
@@ -320,6 +376,8 @@ def register(app: typer.Typer) -> CommandMap:
         results.add_column(style="cyan")
         results.add_column()
 
+        total_bytes_freed = 0
+
         if plan.pods:
             count = _clean_pods(plan, timeout=DEFAULT_STOP_TIMEOUT)
             results.add_row("Cleaning pods...", f"[ok]✓ {count} pod(s) removed[/]")
@@ -331,13 +389,15 @@ def register(app: typer.Typer) -> CommandMap:
             )
 
         if plan.bind_mounts:
-            count = _clean_bind_mounts(plan)
+            count, bytes_freed = _clean_bind_mounts(plan)
+            total_bytes_freed += bytes_freed
             results.add_row(
                 "Cleaning bind mounts...", f"[ok]✓ {count} directory(ies) removed[/]"
             )
 
         if plan.images:
-            count = _clean_images(plan)
+            count, bytes_freed = _clean_images(plan)
+            total_bytes_freed += bytes_freed
             results.add_row("Cleaning images...", f"[ok]✓ {count} image(s) removed[/]")
 
         if plan.network:
@@ -352,6 +412,12 @@ def register(app: typer.Typer) -> CommandMap:
 
         console.print()
         console.print(results)
-        console.print("\n[ok]✓ Cleanup complete![/]")
+
+        if total_bytes_freed > 0:
+            console.print(
+                f"\n[ok]✓ Cleanup complete! Space freed: {_format_bytes(total_bytes_freed)}[/]"
+            )
+        else:
+            console.print("\n[ok]✓ Cleanup complete![/]")
 
     return {"clean": clean}
