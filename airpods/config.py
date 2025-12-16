@@ -8,7 +8,12 @@ from airpods.configuration.errors import ConfigurationError
 from airpods.configuration.schema import AirpodsConfig, ServiceConfig
 from airpods.services import ServiceRegistry, ServiceSpec, VolumeMount
 from airpods.cuda import select_cuda_version
-from airpods.comfyui import select_comfyui_image, select_provider, get_default_env
+from airpods.comfyui import (
+    select_comfyui_image,
+    select_provider,
+    get_default_env,
+    get_comfyui_volumes,
+)
 from airpods.system import detect_cuda_compute_capability
 from airpods.logging import console
 
@@ -89,28 +94,49 @@ def _resolve_cuda_image(
     return resolved_image
 
 
+def _get_comfyui_provider(config: AirpodsConfig):
+    """Detect ComfyUI provider based on GPU capability."""
+    has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
+    return select_provider(compute_cap, "auto")  # type: ignore
+
+
 def _get_comfyui_provider_env(config: AirpodsConfig) -> Dict[str, str]:
     """Get provider-specific environment variables for ComfyUI."""
-    has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
-    provider = select_provider(compute_cap, "auto")  # type: ignore
+    provider = _get_comfyui_provider(config)
     return get_default_env(provider)
 
 
 def _service_spec_from_config(
     name: str, service: ServiceConfig, config: AirpodsConfig
 ) -> ServiceSpec:
-    volumes = [
-        VolumeMount(_resolve_volume_source(mount.source), mount.target)
-        for mount in service.volumes.values()
-    ]
-    if name == "comfyui" and not any(
-        mount.target == "/workspace" for mount in service.volumes.values()
-    ):
-        volumes.append(
-            VolumeMount(
-                _resolve_volume_source("bind://comfyui/workspace"), "/workspace"
+    # Handle ComfyUI provider-specific volumes
+    if name == "comfyui":
+        provider = _get_comfyui_provider(config)
+        provider_volumes = get_comfyui_volumes(provider)
+
+        # Build volumes from config, then add provider-specific defaults
+        volumes = []
+        for vol_name, mount in service.volumes.items():
+            volumes.append(
+                VolumeMount(_resolve_volume_source(mount.source), mount.target)
             )
-        )
+
+        # Add provider-specific volumes if not already configured
+        configured_targets = {vol.target for vol in volumes}
+        for vol_name, (source_suffix, target) in provider_volumes.items():
+            if target not in configured_targets:
+                volumes.append(
+                    VolumeMount(
+                        _resolve_volume_source(f"bind://{source_suffix}"), target
+                    )
+                )
+    else:
+        # Non-ComfyUI services use standard volume handling
+        volumes = [
+            VolumeMount(_resolve_volume_source(mount.source), mount.target)
+            for mount in service.volumes.values()
+        ]
+
     ports = [(port.host, port.container) for port in service.ports]
     env_factory = _webui_secret_env if service.needs_webui_secret else None
 
