@@ -72,9 +72,9 @@ def _resolve_cuda_image(
             selected_cuda_version = "cu126"
             selection_source = f"fallback (GPU detection failed: {gpu_name})"
 
-    # Select provider (yanwk vs mmartial) - for now, default to yanwk
-    # This will be enhanced in later commits
-    provider = select_provider(compute_cap, "yanwk")  # type: ignore
+    # Select provider (yanwk vs mmartial) based on GPU capability
+    # Auto-selects mmartial for Pascal (6.x) and older, yanwk for newer
+    provider = select_provider(compute_cap, "auto")  # type: ignore
 
     # Force CPU if GPU is disabled for this service
     force_cpu = service.gpu.force_cpu or not service.gpu.enabled
