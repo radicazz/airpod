@@ -127,6 +127,39 @@ def image_size_bytes(image: str) -> Optional[int]:
         return None
 
 
+def get_remote_image_size(image: str) -> Optional[int]:
+    """Get the size of a remote image in bytes without pulling it.
+
+    This function attempts to query the remote registry for image size.
+    Returns None if the size cannot be determined.
+    """
+    # First check if the image exists locally - if so, use local size
+    if image_exists(image):
+        return image_size_bytes(image)
+
+    # Try using skopeo to inspect remote image (if available)
+    try:
+        proc = subprocess.run(
+            ["skopeo", "inspect", f"docker://{image}"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if proc.returncode == 0:
+            data = json.loads(proc.stdout)
+            # skopeo reports Size in the manifest
+            if "Size" in data:
+                return int(data["Size"])
+    except (OSError, FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
+        # skopeo not available or failed to parse - that's OK
+        pass
+
+    # If we can't determine the size, return None
+    # The calling code will handle this gracefully
+    return None
+
+
 def pod_exists(pod: str) -> bool:
     try:
         _run(["pod", "inspect", pod])
