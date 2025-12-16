@@ -23,7 +23,7 @@ def themed_table(
     show_header: bool = True,
     header_style: str | None = None,
     row_styles: Tuple[str, str] | None = DEFAULT_ROW_STYLES,
-    box_style=box.SIMPLE_HEAD,
+    box_style=None,
     pad_edge: bool = False,
     expand: bool = False,
 ) -> Table:
