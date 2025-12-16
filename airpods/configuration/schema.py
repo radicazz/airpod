@@ -120,6 +120,7 @@ class ServiceConfig(BaseModel):
     needs_webui_secret: bool = False
     cuda_override: Optional[str] = None
     auto_pull_models: List[str] = Field(default_factory=list)
+    auto_configure_ollama: bool = False
 
     model_config = ConfigDict(extra="ignore")
 

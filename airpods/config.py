@@ -101,13 +101,29 @@ def _service_spec_from_config(
     # Resolve CUDA-aware image for ComfyUI
     resolved_image = _resolve_cuda_image(name, service, config)
 
+    # Build environment variables
+    env = dict(service.env)
+
+    # Conditionally inject Ollama configuration for open-webui service
+    if name == "open-webui" and service.auto_configure_ollama:
+        ollama_service = config.services.get("ollama")
+        if ollama_service and ollama_service.ports:
+            ollama_port = ollama_service.ports[0].host
+            env.update(
+                {
+                    "OLLAMA_BASE_URL": f"http://localhost:{ollama_port}",
+                    "OPENAI_API_BASE_URL": f"http://localhost:{ollama_port}/v1",
+                    "OPENAI_API_KEY": "ollama",
+                }
+            )
+
     return ServiceSpec(
         name=name,
         pod=service.pod,
         container=service.container,
         image=resolved_image,
         ports=ports,
-        env=dict(service.env),
+        env=env,
         env_factory=env_factory,
         volumes=volumes,
         pids_limit=service.pids_limit,
