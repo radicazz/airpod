@@ -36,7 +36,6 @@ class CleanupPlan:
         self.volumes: list[str] = []
         self.bind_mounts: list[tuple[Path, int]] = []  # (path, size_bytes)
         self.images: list[tuple[str, str, int]] = []  # (name, image, size_bytes)
-        self.network: Optional[str] = None
         self.config_files: list[Path] = []
 
     def has_items(self) -> bool:
@@ -46,7 +45,6 @@ class CleanupPlan:
             or self.volumes
             or self.bind_mounts
             or self.images
-            or self.network
             or self.config_files
         )
 
@@ -104,7 +102,6 @@ def _collect_cleanup_targets(
     pods: bool = False,
     volumes: bool = False,
     images: bool = False,
-    network: bool = False,
     configs: bool = False,
 ) -> CleanupPlan:
     """Scan filesystem and podman to identify what exists and should be cleaned."""
@@ -138,11 +135,6 @@ def _collect_cleanup_targets(
             if size_str:
                 size_bytes = _parse_image_size(size_str)
                 plan.images.append((spec.name, spec.image, size_bytes))
-
-    if network:
-        network_name = manager.network_name
-        if manager.runtime.network_exists(network_name):
-            plan.network = network_name
 
     if configs:
         cfg_dir = configs_dir()
@@ -186,11 +178,6 @@ def _show_cleanup_plan(plan: CleanupPlan, dry_run: bool = False) -> None:
         for name, image, size_bytes in plan.images:
             size_str = _format_bytes(size_bytes) if size_bytes > 0 else "unknown size"
             lines.append(f"  • {image} ({size_str})")
-        lines.append("")
-
-    if plan.network:
-        lines.append("[cyan]Network:[/]")
-        lines.append(f"  • {plan.network}")
         lines.append("")
 
     if plan.config_files:
@@ -258,18 +245,6 @@ def _clean_images(plan: CleanupPlan) -> tuple[int, int]:
     return count, bytes_freed
 
 
-def _clean_network(plan: CleanupPlan) -> bool:
-    """Remove network. Returns True if removed."""
-    if not plan.network:
-        return False
-    try:
-        manager.runtime.remove_network(plan.network)
-        return True
-    except ContainerRuntimeError as exc:
-        console.print(f"[warn]Failed to remove network {plan.network}: {exc}[/]")
-        return False
-
-
 def _clean_configs(plan: CleanupPlan, backup: bool = False) -> int:
     """Remove config files. Returns count removed."""
     count = 0
@@ -297,7 +272,7 @@ def register(app: typer.Typer) -> CommandMap:
             False,
             "--all",
             "-a",
-            help="Remove everything (pods, volumes, images, network, configs).",
+            help="Remove everything (pods, volumes, images, configs).",
         ),
         pods: bool = typer.Option(
             False, "--pods", "-p", help="Stop and remove all pods and containers."
@@ -310,9 +285,6 @@ def register(app: typer.Typer) -> CommandMap:
         ),
         images: bool = typer.Option(
             False, "--images", "-i", help="Remove pulled container images."
-        ),
-        network: bool = typer.Option(
-            False, "--network", "-n", help="Remove the airpods network."
         ),
         configs: bool = typer.Option(
             False,
@@ -336,9 +308,9 @@ def register(app: typer.Typer) -> CommandMap:
         maybe_show_command_help(ctx, help_)
 
         if all_:
-            pods = volumes = images = network = configs = True
+            pods = volumes = images = configs = True
 
-        if not any([pods, volumes, images, network, configs]):
+        if not any([pods, volumes, images, configs]):
             exit_with_help(
                 ctx,
                 message="No cleanup targets specified.",
@@ -351,7 +323,6 @@ def register(app: typer.Typer) -> CommandMap:
             pods=pods,
             volumes=volumes,
             images=images,
-            network=network,
             configs=configs,
         )
 
@@ -399,12 +370,6 @@ def register(app: typer.Typer) -> CommandMap:
             count, bytes_freed = _clean_images(plan)
             total_bytes_freed += bytes_freed
             results.add_row("Cleaning images...", f"[ok]✓ {count} image(s) removed[/]")
-
-        if plan.network:
-            if _clean_network(plan):
-                results.add_row(
-                    "Cleaning network...", f"[ok]✓ {plan.network} removed[/]"
-                )
 
         if plan.config_files:
             count = _clean_configs(plan, backup=backup_config)

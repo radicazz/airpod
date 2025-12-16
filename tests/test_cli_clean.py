@@ -20,8 +20,6 @@ def mock_manager():
         mock.runtime.pod_exists.return_value = False
         mock.runtime.list_volumes.return_value = []
         mock.runtime.image_size.return_value = None
-        mock.runtime.network_exists.return_value = False
-        mock.network_name = "airpods_network"
         yield mock
 
 
@@ -84,7 +82,6 @@ def test_clean_help_shows_usage():
     assert "--pods" in result.stdout
     assert "--volumes" in result.stdout
     assert "--images" in result.stdout
-    assert "--network" in result.stdout
     assert "--configs" in result.stdout
     assert "--dry-run" in result.stdout
 
@@ -96,14 +93,12 @@ def test_clean_dry_run_shows_plan(
     mock_manager.runtime.pod_exists.return_value = True
     mock_manager.runtime.list_volumes.return_value = ["airpods_ollama_data"]
     mock_manager.runtime.image_size.return_value = "3.5GB"
-    mock_manager.runtime.network_exists.return_value = True
 
     result = runner.invoke(app, ["clean", "--all", "--dry-run"])
     assert result.exit_code == 0
     assert "DRY RUN" in result.stdout
     assert "ollama" in result.stdout
     assert "airpods_ollama_data" in result.stdout
-    assert "airpods_network" in result.stdout
     assert "No changes were made" in result.stdout
 
 
@@ -157,16 +152,6 @@ def test_clean_images_only(mock_manager, mock_resolve_services, mock_podman):
     assert result.exit_code == 0
     assert "Cleaning images" in result.stdout
     assert mock_manager.runtime.remove_image.call_count == 2
-
-
-def test_clean_network_only(mock_manager, mock_resolve_services, mock_podman):
-    """Test cleaning only network."""
-    mock_manager.runtime.network_exists.return_value = True
-
-    result = runner.invoke(app, ["clean", "--network", "--force"])
-    assert result.exit_code == 0
-    assert "Cleaning network" in result.stdout
-    mock_manager.runtime.remove_network.assert_called_with("airpods_network")
 
 
 def test_clean_configs_only(
@@ -250,7 +235,6 @@ def test_clean_all_flag(mock_manager, mock_resolve_services, mock_podman, mock_d
     mock_manager.runtime.pod_exists.return_value = True
     mock_manager.runtime.list_volumes.return_value = ["airpods_ollama_data"]
     mock_manager.runtime.image_size.return_value = "3.5GB"
-    mock_manager.runtime.network_exists.return_value = True
 
     configs_dir = mock_dirs["configs"]
     (configs_dir / "config.toml").write_text("test")
@@ -260,7 +244,6 @@ def test_clean_all_flag(mock_manager, mock_resolve_services, mock_podman, mock_d
     assert "Cleaning pods" in result.stdout
     assert "Cleaning volumes" in result.stdout
     assert "Cleaning images" in result.stdout
-    assert "Cleaning network" in result.stdout
     assert "Cleaning configs" in result.stdout
     assert "Cleanup complete" in result.stdout
 

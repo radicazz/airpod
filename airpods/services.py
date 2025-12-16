@@ -19,7 +19,7 @@ from typing import (
 from airpods import gpu as gpu_utils
 from airpods import state
 from airpods.runtime import ContainerRuntime, ContainerRuntimeError
-from airpods.system import CheckResult, check_dependency, detect_dns_servers, detect_gpu
+from airpods.system import CheckResult, check_dependency, detect_gpu
 
 
 class UnknownServiceError(ValueError):
@@ -53,8 +53,6 @@ class ServiceSpec:
     env: Dict[str, str] = field(default_factory=dict)
     env_factory: Optional[Callable[[], Dict[str, str]]] = None
     volumes: List[VolumeMount] = field(default_factory=list)
-    network_aliases: List[str] = field(default_factory=list)
-    network_mode: str = "pod"
     pids_limit: int = 2048
     needs_gpu: bool = False
     health_path: Optional[str] = None
@@ -136,13 +134,6 @@ class ServiceManager:
         registry: ServiceRegistry,
         runtime: ContainerRuntime,
         *,
-        network_name: str = "airpods_network",
-        network_driver: str = "bridge",
-        network_subnet: str | None = None,
-        network_gateway: str | None = None,
-        network_dns_servers: list[str] | None = None,
-        network_ipv6: bool = False,
-        network_internal: bool = False,
         restart_policy: str = "unless-stopped",
         gpu_device_flag: str | None = None,
         required_dependencies: Optional[Sequence[str]] = None,
@@ -151,13 +142,6 @@ class ServiceManager:
     ):
         self.registry = registry
         self.runtime = runtime
-        self.network_name = network_name
-        self.network_driver = network_driver
-        self.network_subnet = network_subnet
-        self.network_gateway = network_gateway
-        self.network_dns_servers = network_dns_servers or []
-        self.network_ipv6 = network_ipv6
-        self.network_internal = network_internal
         self.restart_policy = restart_policy
         self.gpu_device_flag = gpu_device_flag
         self.required_dependencies = list(
@@ -201,19 +185,6 @@ class ServiceManager:
     # ----------------------------------------------------------------------------------
     # Pod + container orchestration
     # ----------------------------------------------------------------------------------
-    def ensure_network(self) -> bool:
-        """Create the shared pod network if it doesn't exist."""
-        dns_servers = self.network_dns_servers or detect_dns_servers()
-        return self.runtime.ensure_network(
-            self.network_name,
-            driver=self.network_driver,
-            subnet=self.network_subnet,
-            gateway=self.network_gateway,
-            dns_servers=dns_servers,
-            ipv6=self.network_ipv6,
-            internal=self.network_internal,
-        )
-
     def ensure_volumes(self, specs: Iterable[ServiceSpec]) -> List[VolumeEnsureResult]:
         """Create all volumes required by the given service specs."""
         results: List[VolumeEnsureResult] = []
@@ -297,10 +268,7 @@ class ServiceManager:
         force_cpu_override: bool = False,
     ) -> ServiceStartResult:
         """Start a service by creating its pod and running its container."""
-        dns_servers = self.network_dns_servers or detect_dns_servers()
-        pod_created = self.runtime.ensure_pod(
-            spec.pod, spec.ports, network=self.network_name, dns_servers=dns_servers
-        )
+        pod_created = self.runtime.ensure_pod(spec.pod, spec.ports)
         gpu_enabled = spec.needs_gpu and not spec.force_cpu and not force_cpu_override
         container_replaced = self.runtime.run_container(
             pod=spec.pod,
@@ -308,11 +276,9 @@ class ServiceManager:
             image=spec.image,
             env=spec.runtime_env(),
             volumes=[mount.as_tuple() for mount in spec.volumes],
-            network_aliases=spec.network_aliases,
             gpu=gpu_enabled and gpu_available,
             restart_policy=self.restart_policy,
             gpu_device_flag=self.gpu_device_flag,
-            network_mode=spec.network_mode,
             pids_limit=spec.pids_limit,
         )
         return ServiceStartResult(

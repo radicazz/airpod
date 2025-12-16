@@ -137,8 +137,6 @@ def reload_config() -> AirpodsConfig:
 def _apply_runtime_defaults(config: AirpodsConfig) -> AirpodsConfig:
     runtime = config.runtime
     updates: Dict[str, Any] = {}
-    if runtime.host_gateway == "auto":
-        updates["host_gateway"] = "host.containers.internal"
     if runtime.gpu_device_flag == "auto":
         updates["gpu_device_flag"] = "--device nvidia.com/gpu=all"
     if not updates:

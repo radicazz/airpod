@@ -55,7 +55,6 @@ class TestPodmanRuntime:
         """PodmanRuntime should have all required protocol methods."""
         runtime = PodmanRuntime()
         required_methods = [
-            "ensure_network",
             "ensure_volume",
             "pull_image",
             "ensure_pod",

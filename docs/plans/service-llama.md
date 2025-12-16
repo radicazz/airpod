@@ -43,7 +43,7 @@ The current private plan describes three main ways to run llama.cpp under airpod
   - Run Ollama and llama.cpp simultaneously, with Open WebUI configured to talk to both backends.
   - Use separate llama.cpp instances with different models or configurations (e.g., a fast chat-oriented instance vs a large-context instance), each bound to its own port.
 
-All of these are expressed as TOML service entries under `[services.*]` with fields such as `image`, `pod`, `container`, `network_aliases`, `ports`, `volumes`, `gpu`, `health`, `env`, `resources`, and `command_args` in the existing plan.
+All of these are expressed as TOML service entries under `[services.*]` with fields such as `image`, `pod`, `container`, `ports`, `volumes`, `gpu`, `health`, `env`, `resources`, and `command_args` in the existing plan.
 
 ## Configuration Patterns (As Described)
 

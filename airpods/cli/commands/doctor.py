@@ -6,11 +6,7 @@ import typer
 
 from airpods import __version__, gpu as gpu_utils, ui
 from airpods.logging import console
-from airpods.system import (
-    detect_cuda_compute_capability,
-    detect_dns_servers,
-    detect_vpn_mtu_issues,
-)
+from airpods.system import detect_cuda_compute_capability
 from airpods.updates import (
     check_for_update,
     detect_install_source,
@@ -71,58 +67,6 @@ def register(app: typer.Typer) -> CommandMap:
                 console.print(
                     "[dim]GPU detected but Container Toolkit not found. Install it for GPU support in containers.[/]"
                 )
-
-        # Networking hints (common cause of HuggingFace/Ollama download failures)
-        effective_dns = manager.network_dns_servers or detect_dns_servers()
-        dns_label = ", ".join(effective_dns) if effective_dns else "none"
-        console.print(f"Network DNS: [accent]{dns_label}[/]")
-        if manager.network_dns_servers == []:
-            console.print(
-                "[dim]Tip: Set 'runtime.network.dns_servers' in config.toml if you're on a restricted/corporate network.[/dim]"
-            )
-        if manager.runtime.network_exists(manager.network_name):
-            console.print(
-                "[dim]Tip: If containers can't reach the internet, recreate the network with 'airpods start --reset-network' (or 'airpods clean --network').[/dim]"
-            )
-
-        # Check for VPN MTU issues that can cause HTTPS timeouts
-        has_vpn_issue, vpn_iface, vpn_mtu, has_mss_clamping = detect_vpn_mtu_issues()
-        if has_vpn_issue and vpn_iface:
-            if has_mss_clamping:
-                console.print(
-                    f"VPN MTU: [ok]MSS clamping configured for {vpn_iface}[/]"
-                )
-            else:
-                console.print(
-                    f"VPN MTU Issue: [warn]detected ({vpn_iface}, MTU {vpn_mtu})[/]"
-                )
-                console.print(
-                    "[dim]Containers may experience HTTPS timeouts. Choose one solution:[/]"
-                )
-                console.print(
-                    "[dim]• Quick fix: Use host networking for affected services[/]"
-                )
-                console.print(
-                    '[dim]  Edit config.toml: services.comfyui.network_mode = "host"[/]'
-                )
-                console.print(
-                    "[dim]• System-wide fix: Enable MSS clamping (requires sudo)[/]"
-                )
-                try:
-                    repo_root = detect_repo_root()
-                    if repo_root:
-                        script_path = repo_root / "scripts" / "mss-clamping"
-                        if script_path.exists():
-                            console.print(f"[dim]  Run: sudo {script_path} enable[/]")
-                        else:
-                            console.print(
-                                "[dim]  Run: sudo scripts/mss-clamping enable[/]"
-                            )
-                    else:
-                        console.print("[dim]  Run: sudo scripts/mss-clamping enable[/]")
-                except Exception:
-                    console.print("[dim]  Run: sudo scripts/mss-clamping enable[/]")
-                console.print("[dim]See: docs/troubleshooting-network-vpn.md[/]")
 
         latest = check_for_update()
         if latest and is_update_available(latest):

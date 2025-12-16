@@ -12,32 +12,11 @@ class ContainerRuntimeError(RuntimeError):
 class ContainerRuntime(Protocol):
     """Abstract interface for container runtime operations."""
 
-    def ensure_network(
-        self,
-        name: str,
-        *,
-        driver: str = "bridge",
-        subnet: str | None = None,
-        gateway: str | None = None,
-        dns_servers: list[str] | None = None,
-        ipv6: bool = False,
-        internal: bool = False,
-    ) -> bool:
-        """Create a network if it doesn't exist.
-
-        Returns True if the network was created, False if it already existed.
-        """
-        ...
-
     def ensure_volume(self, name: str) -> bool:
         """Create a volume if it doesn't exist.
 
         Returns True if the volume was created, False if it already existed.
         """
-        ...
-
-    def network_exists(self, name: str) -> bool:
-        """Check if a network exists."""
         ...
 
     def pull_image(self, image: str) -> None:
@@ -48,8 +27,6 @@ class ContainerRuntime(Protocol):
         self,
         pod: str,
         ports: Iterable[tuple[int, int]],
-        network: str,
-        dns_servers: list[str] | None = None,
     ) -> bool:
         """Create a pod if it doesn't exist.
 
@@ -65,11 +42,9 @@ class ContainerRuntime(Protocol):
         image: str,
         env: Dict[str, str],
         volumes: Iterable[tuple[str, str]],
-        network_aliases: List[str] | None = None,
         gpu: bool = False,
         restart_policy: str = "unless-stopped",
         gpu_device_flag: Optional[str] = None,
-        network_mode: str = "pod",
         pids_limit: int = 2048,
     ) -> bool:
         """Run a container in a pod.
@@ -132,46 +107,15 @@ class ContainerRuntime(Protocol):
         """Remove an image."""
         ...
 
-    def remove_network(self, name: str) -> None:
-        """Remove a network."""
-        ...
-
 
 class PodmanRuntime:
     """Podman implementation of the container runtime interface."""
-
-    def ensure_network(
-        self,
-        name: str,
-        *,
-        driver: str = "bridge",
-        subnet: str | None = None,
-        gateway: str | None = None,
-        dns_servers: list[str] | None = None,
-        ipv6: bool = False,
-        internal: bool = False,
-    ) -> bool:
-        try:
-            return podman.ensure_network(
-                name,
-                driver=driver,
-                subnet=subnet,
-                gateway=gateway,
-                dns_servers=dns_servers,
-                ipv6=ipv6,
-                internal=internal,
-            )
-        except podman.PodmanError as exc:
-            raise ContainerRuntimeError(str(exc)) from exc
 
     def ensure_volume(self, name: str) -> bool:
         try:
             return podman.ensure_volume(name)
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc
-
-    def network_exists(self, name: str) -> bool:
-        return podman.network_exists(name)
 
     def pull_image(self, image: str) -> None:
         try:
@@ -183,11 +127,9 @@ class PodmanRuntime:
         self,
         pod: str,
         ports: Iterable[tuple[int, int]],
-        network: str,
-        dns_servers: list[str] | None = None,
     ) -> bool:
         try:
-            return podman.ensure_pod(pod, ports, network, dns_servers=dns_servers)
+            return podman.ensure_pod(pod, ports)
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc
 
@@ -199,11 +141,9 @@ class PodmanRuntime:
         image: str,
         env: Dict[str, str],
         volumes: Iterable[tuple[str, str]],
-        network_aliases: List[str] | None = None,
         gpu: bool = False,
         restart_policy: str = "unless-stopped",
         gpu_device_flag: Optional[str] = None,
-        network_mode: str = "pod",
         pids_limit: int = 2048,
     ) -> bool:
         try:
@@ -213,11 +153,9 @@ class PodmanRuntime:
                 image=image,
                 env=env,
                 volumes=volumes,
-                network_aliases=network_aliases,
                 gpu=gpu,
                 restart_policy=restart_policy,
                 gpu_device_flag=gpu_device_flag,
-                network_mode=network_mode,
                 pids_limit=pids_limit,
             )
         except podman.PodmanError as exc:
@@ -272,12 +210,6 @@ class PodmanRuntime:
     def remove_image(self, image: str) -> None:
         try:
             podman.remove_image(image)
-        except podman.PodmanError as exc:
-            raise ContainerRuntimeError(str(exc)) from exc
-
-    def remove_network(self, name: str) -> None:
-        try:
-            podman.remove_network(name)
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc
 

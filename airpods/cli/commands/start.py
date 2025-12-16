@@ -72,11 +72,6 @@ def register(app: typer.Typer) -> CommandMap:
             "--wait",
             help="Wait for HTTP health checks before returning (may take a while for some services).",
         ),
-        reset_network: bool = typer.Option(
-            False,
-            "--reset-network",
-            help="Recreate the airpods network before starting (fixes some DNS/internet issues).",
-        ),
     ) -> None:
         """Start pods for specified services."""
         maybe_show_command_help(ctx, help_)
@@ -192,35 +187,6 @@ def register(app: typer.Typer) -> CommandMap:
                     console.print(f"CUDA: [muted]{cuda_info}[/]")
         else:
             gpu_available, gpu_detail = detect_gpu()
-
-        # Only ensure network/volumes if we're actually starting something
-        if reset_network:
-            running = [
-                row.get("Name")
-                for row in (manager.pod_status_rows() or {}).values()
-                if row.get("Status") == "Running"
-            ]
-            if running:
-                console.print(
-                    "[error]Cannot reset network while pods are running.[/]\n"
-                    "[dim]Tip: Run 'airpods stop' first, or use 'airpods clean --network'.[/dim]"
-                )
-                raise typer.Exit(code=1)
-
-            if not cli_config.auto_confirm:
-                if not ui.confirm_action(
-                    f"Recreate network '{manager.network_name}'?", default=False
-                ):
-                    console.print("[warn]Network reset cancelled by user.[/]")
-                    raise typer.Exit(code=1)
-
-            with status_spinner("Resetting network"):
-                if manager.runtime.network_exists(manager.network_name):
-                    manager.runtime.remove_network(manager.network_name)
-
-        with status_spinner("Ensuring network"):
-            network_created = manager.ensure_network()
-        print_network_status(network_created, manager.network_name, verbose=verbose)
 
         with status_spinner("Ensuring volumes"):
             volume_results = manager.ensure_volumes(specs_to_start)
