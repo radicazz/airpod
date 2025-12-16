@@ -27,6 +27,7 @@ class ContainerRuntime(Protocol):
         self,
         pod: str,
         ports: Iterable[tuple[int, int]],
+        userns_mode: Optional[str] = None,
     ) -> bool:
         """Create a pod if it doesn't exist.
 
@@ -46,6 +47,7 @@ class ContainerRuntime(Protocol):
         restart_policy: str = "unless-stopped",
         gpu_device_flag: Optional[str] = None,
         pids_limit: int = 2048,
+        userns_mode: Optional[str] = None,
     ) -> bool:
         """Run a container in a pod.
 
@@ -139,9 +141,10 @@ class PodmanRuntime:
         self,
         pod: str,
         ports: Iterable[tuple[int, int]],
+        userns_mode: Optional[str] = None,
     ) -> bool:
         try:
-            return podman.ensure_pod(pod, ports)
+            return podman.ensure_pod(pod, ports, userns_mode=userns_mode)
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc
 
@@ -157,6 +160,7 @@ class PodmanRuntime:
         restart_policy: str = "unless-stopped",
         gpu_device_flag: Optional[str] = None,
         pids_limit: int = 2048,
+        userns_mode: Optional[str] = None,
     ) -> bool:
         try:
             return podman.run_container(
@@ -169,6 +173,7 @@ class PodmanRuntime:
                 restart_policy=restart_policy,
                 gpu_device_flag=gpu_device_flag,
                 pids_limit=pids_limit,
+                userns_mode=userns_mode,
             )
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc

@@ -7,7 +7,13 @@ from airpods.configuration import get_config
 from airpods.configuration.errors import ConfigurationError
 from airpods.configuration.schema import AirpodsConfig, ServiceConfig
 from airpods.services import ServiceRegistry, ServiceSpec, VolumeMount
-from airpods.cuda import select_cuda_version, select_comfyui_image
+from airpods.cuda import select_cuda_version
+from airpods.comfyui import (
+    select_comfyui_image,
+    select_provider,
+    get_default_env,
+    get_comfyui_volumes,
+)
 from airpods.system import detect_cuda_compute_capability
 from airpods.logging import console
 
@@ -49,6 +55,9 @@ def _resolve_cuda_image(
     selected_cuda_version = None
     selection_source = None
 
+    # Detect GPU capability for provider selection
+    has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
+
     if service.cuda_override:
         selected_cuda_version = service.cuda_override
         selection_source = f"service override ({service.cuda_override})"
@@ -57,7 +66,6 @@ def _resolve_cuda_image(
         selection_source = f"runtime setting ({config.runtime.cuda_version})"
     else:
         # Auto-detection
-        has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
         if has_gpu and compute_cap:
             selected_cuda_version = select_cuda_version(compute_cap)
             major, minor = compute_cap
@@ -69,9 +77,16 @@ def _resolve_cuda_image(
             selected_cuda_version = "cu126"
             selection_source = f"fallback (GPU detection failed: {gpu_name})"
 
+    # Select provider (yanwk vs mmartial) based on GPU capability
+    # Respects user preference from config, or auto-selects based on GPU
+    provider_pref = config.runtime.comfyui_provider
+    provider = select_provider(compute_cap, provider_pref)
+
     # Force CPU if GPU is disabled for this service
     force_cpu = service.gpu.force_cpu or not service.gpu.enabled
-    resolved_image = select_comfyui_image(selected_cuda_version, force_cpu=force_cpu)
+    resolved_image = select_comfyui_image(
+        selected_cuda_version, force_cpu=force_cpu, provider=provider
+    )
 
     # Log the selection for transparency
     if ENABLE_COMFY_CUDA_LOG and resolved_image != service.image:
@@ -80,29 +95,66 @@ def _resolve_cuda_image(
     return resolved_image
 
 
+def _get_comfyui_provider(config: AirpodsConfig):
+    """Detect ComfyUI provider based on GPU capability and config."""
+    has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
+    # Use runtime.comfyui_provider setting (defaults to "auto")
+    provider_pref = config.runtime.comfyui_provider
+    return select_provider(compute_cap, provider_pref)
+
+
+def _get_comfyui_provider_env(config: AirpodsConfig) -> Dict[str, str]:
+    """Get provider-specific environment variables for ComfyUI."""
+    provider = _get_comfyui_provider(config)
+    return get_default_env(provider)
+
+
 def _service_spec_from_config(
     name: str, service: ServiceConfig, config: AirpodsConfig
 ) -> ServiceSpec:
-    volumes = [
-        VolumeMount(_resolve_volume_source(mount.source), mount.target)
-        for mount in service.volumes.values()
-    ]
-    if name == "comfyui" and not any(
-        mount.target == "/workspace" for mount in service.volumes.values()
-    ):
-        volumes.append(
-            VolumeMount(
-                _resolve_volume_source("bind://comfyui/workspace"), "/workspace"
+    # Handle ComfyUI provider-specific volumes
+    if name == "comfyui":
+        provider = _get_comfyui_provider(config)
+        provider_volumes = get_comfyui_volumes(provider)
+
+        # Build volumes from config, then add provider-specific defaults
+        volumes = []
+        for vol_name, mount in service.volumes.items():
+            volumes.append(
+                VolumeMount(_resolve_volume_source(mount.source), mount.target)
             )
-        )
+
+        # Add provider-specific volumes if not already configured
+        configured_targets = {vol.target for vol in volumes}
+        for vol_name, (source_suffix, target) in provider_volumes.items():
+            if target not in configured_targets:
+                volumes.append(
+                    VolumeMount(
+                        _resolve_volume_source(f"bind://{source_suffix}"), target
+                    )
+                )
+    else:
+        # Non-ComfyUI services use standard volume handling
+        volumes = [
+            VolumeMount(_resolve_volume_source(mount.source), mount.target)
+            for mount in service.volumes.values()
+        ]
+
     ports = [(port.host, port.container) for port in service.ports]
     env_factory = _webui_secret_env if service.needs_webui_secret else None
 
     # Resolve CUDA-aware image for ComfyUI
     resolved_image = _resolve_cuda_image(name, service, config)
 
-    # Build environment variables
+    # Build environment variables with provider-specific defaults
     env = dict(service.env)
+    if name == "comfyui":
+        # Add provider-specific environment variables (mmartial needs extra env vars)
+        provider_env = _get_comfyui_provider_env(config)
+        # User-configured env takes precedence over provider defaults
+        for key, value in provider_env.items():
+            if key not in env:
+                env[key] = value
 
     # Conditionally inject Ollama configuration for open-webui service
     if name == "open-webui" and service.auto_configure_ollama:
@@ -117,6 +169,13 @@ def _service_spec_from_config(
                 }
             )
 
+    # Set userns_mode for mmartial ComfyUI (needs keep-id for proper file ownership at pod level)
+    userns_mode = None
+    if name == "comfyui":
+        provider = _get_comfyui_provider(config)
+        if provider == "mmartial":
+            userns_mode = "keep-id"
+
     return ServiceSpec(
         name=name,
         pod=service.pod,
@@ -130,6 +189,7 @@ def _service_spec_from_config(
         needs_gpu=service.gpu.enabled,
         health_path=service.health.path,
         force_cpu=service.gpu.force_cpu,
+        userns_mode=userns_mode,
     )
 
 

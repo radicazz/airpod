@@ -30,15 +30,6 @@ CUDA_COMPATIBILITY_MAP: Dict[Tuple[int, int], str] = {
     (9, 0): "cu130",
 }
 
-# ComfyUI image variants available
-COMFYUI_IMAGES: Dict[str, str] = {
-    "cu118": "docker.io/yanwk/comfyui-boot:cu118-slim",  # fallback to cu126 if not available
-    "cu126": "docker.io/yanwk/comfyui-boot:cu126-megapak",  # Safe backwards-compatible default
-    "cu128": "docker.io/yanwk/comfyui-boot:cu128-slim",
-    "cu130": "docker.io/yanwk/comfyui-boot:cu130-slim",
-    "cpu": "docker.io/yanwk/comfyui-boot:cpu",
-}
-
 # Default fallback CUDA version (backwards compatible with most GPUs)
 DEFAULT_CUDA_VERSION = "cu126"
 
@@ -95,28 +86,6 @@ def _cuda_version_newer(version1: str, version2: str) -> bool:
         return num1 > num2
     except ValueError:
         return False
-
-
-def select_comfyui_image(
-    cuda_version: Optional[str] = None, force_cpu: bool = False
-) -> str:
-    """Select appropriate ComfyUI Docker image based on CUDA version.
-
-    Args:
-        cuda_version: CUDA version like "cu126", "cu128", etc. If None, auto-detect.
-        force_cpu: If True, return CPU-only image regardless of cuda_version.
-
-    Returns:
-        Docker image tag for ComfyUI
-    """
-    if force_cpu:
-        return COMFYUI_IMAGES["cpu"]
-
-    if not cuda_version:
-        cuda_version = DEFAULT_CUDA_VERSION
-
-    # Return requested CUDA image, fallback to default if not found
-    return COMFYUI_IMAGES.get(cuda_version, COMFYUI_IMAGES[DEFAULT_CUDA_VERSION])
 
 
 def get_cuda_info_display(
