@@ -128,11 +128,14 @@ def container_exists(name: str) -> bool:
 def ensure_pod(
     pod: str,
     ports: Iterable[tuple[int, int]],
+    userns_mode: Optional[str] = None,
 ) -> bool:
     if pod_exists(pod):
         return False
     # Port mappings are not used with host networking; containers bind directly to host ports
     args = ["pod", "create", "--name", pod, "--network", "host"]
+    if userns_mode:
+        args.extend(["--userns", userns_mode])
     try:
         _run(args, capture=False)
     except subprocess.CalledProcessError as exc:

@@ -135,10 +135,14 @@ def get_default_env(provider: ComfyProvider) -> Dict[str, str]:
             "USE_PIPUPGRADE": "false",
             "BASE_DIRECTORY": "/basedir",
             "SECURITY_LEVEL": "weak",
+            "CLI_ARGS": "--listen 0.0.0.0",
             "NVIDIA_VISIBLE_DEVICES": "all",
             "NVIDIA_DRIVER_CAPABILITIES": "all",
             "WANTED_UID": str(uid),
             "WANTED_GID": str(gid),
         }
 
-    return {}
+    # yanwk default environment
+    return {
+        "CLI_ARGS": "--listen 0.0.0.0",
+    }

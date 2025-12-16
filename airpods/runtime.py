@@ -27,6 +27,7 @@ class ContainerRuntime(Protocol):
         self,
         pod: str,
         ports: Iterable[tuple[int, int]],
+        userns_mode: Optional[str] = None,
     ) -> bool:
         """Create a pod if it doesn't exist.
 
@@ -128,9 +129,10 @@ class PodmanRuntime:
         self,
         pod: str,
         ports: Iterable[tuple[int, int]],
+        userns_mode: Optional[str] = None,
     ) -> bool:
         try:
-            return podman.ensure_pod(pod, ports)
+            return podman.ensure_pod(pod, ports, userns_mode=userns_mode)
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc
 

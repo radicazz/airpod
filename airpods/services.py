@@ -269,7 +269,7 @@ class ServiceManager:
         force_cpu_override: bool = False,
     ) -> ServiceStartResult:
         """Start a service by creating its pod and running its container."""
-        pod_created = self.runtime.ensure_pod(spec.pod, spec.ports)
+        pod_created = self.runtime.ensure_pod(spec.pod, spec.ports, userns_mode=spec.userns_mode)
         gpu_enabled = spec.needs_gpu and not spec.force_cpu and not force_cpu_override
         container_replaced = self.runtime.run_container(
             pod=spec.pod,
@@ -281,7 +281,7 @@ class ServiceManager:
             restart_policy=self.restart_policy,
             gpu_device_flag=self.gpu_device_flag,
             pids_limit=spec.pids_limit,
-            userns_mode=spec.userns_mode,
+            userns_mode=None,
         )
         return ServiceStartResult(
             spec=spec, pod_created=pod_created, container_replaced=container_replaced

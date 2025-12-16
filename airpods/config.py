@@ -156,7 +156,7 @@ def _service_spec_from_config(
             if key not in env:
                 env[key] = value
 
-    # Set userns_mode for mmartial ComfyUI (needs keep-id for proper file ownership)
+    # Set userns_mode for mmartial ComfyUI (needs keep-id for proper file ownership at pod level)
     userns_mode = None
     if name == "comfyui":
         provider = _get_comfyui_provider(config)
