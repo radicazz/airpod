@@ -4,7 +4,11 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "airpods"
+<<<<<<< HEAD
 version = "0.14.5"
+=======
+version = "0.14.6"
+>>>>>>> 0af2cd6 (feat: improve GPU detection)
 source = { editable = "." }
 dependencies = [
     { name = "click" },

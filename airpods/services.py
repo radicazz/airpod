@@ -16,6 +16,7 @@ from typing import (
     Tuple,
 )
 
+from airpods import gpu as gpu_utils
 from airpods import state
 from airpods.runtime import ContainerRuntime, ContainerRuntimeError
 from airpods.system import CheckResult, check_dependency, detect_dns_servers, detect_gpu

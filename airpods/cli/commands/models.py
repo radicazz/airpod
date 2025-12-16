@@ -126,7 +126,7 @@ def _detect_model_source(model_spec: str) -> str:
     # Check for explicit Ollama URLs
     if "ollama.com" in model_spec.lower():
         return "ollama"
-    
+
     # Check for obvious HuggingFace indicators
     if "huggingface.co" in model_spec.lower():
         return "huggingface"
@@ -172,7 +172,9 @@ def pull_model_cmd(
 
     # Determine source (explicit or auto-detected)
     if source:
-        detected_source = "huggingface" if source.lower() in ("huggingface", "hf") else "ollama"
+        detected_source = (
+            "huggingface" if source.lower() in ("huggingface", "hf") else "ollama"
+        )
         console.print(f"[dim]Using explicit source: [accent]{detected_source}[/][/dim]")
     else:
         detected_source = _detect_model_source(model)
@@ -520,12 +522,18 @@ def search_models_cmd(
                 stats = " - " + " • ".join(stats_parts) if stats_parts else ""
                 console.print(f"  [accent]{repo_id}[/accent]{stats}")
                 console.print(f"    [dim]→ [link={url}]{url}[/link][/dim]")
-            
-            console.print(f"\n[dim]Tip: Pull with 'airpods models pull <repo> --source huggingface'[/dim]")
+
+            console.print(
+                f"\n[dim]Tip: Pull with 'airpods models pull <repo> --source huggingface'[/dim]"
+            )
         else:
             console.print("[dim]No results found[/dim]")
-            console.print(f"\n[dim]Browse models: [link=https://ollama.com/library]https://ollama.com/library[/link][/dim]")
-            console.print(f"[dim]               [link=https://huggingface.co/models?library=gguf]https://huggingface.co/models?library=gguf[/link][/dim]")
+            console.print(
+                f"\n[dim]Browse models: [link=https://ollama.com/library]https://ollama.com/library[/link][/dim]"
+            )
+            console.print(
+                f"[dim]               [link=https://huggingface.co/models?library=gguf]https://huggingface.co/models?library=gguf[/link][/dim]"
+            )
 
     except ollama.OllamaAPIError as e:
         console.print(f"[error]Search failed: {e}[/]")

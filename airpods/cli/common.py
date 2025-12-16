@@ -6,6 +6,7 @@ from typing import Optional
 import typer
 
 from airpods import __version__
+from airpods import gpu as gpu_utils
 import airpods.config as config_module
 from airpods.configuration import get_config, reload_config
 from airpods.configuration.schema import CLIConfig
@@ -53,6 +54,9 @@ def _apply_cli_config(config) -> None:
     DEFAULT_STARTUP_TIMEOUT = _CONFIG.cli.startup_timeout
     DEFAULT_STARTUP_CHECK_INTERVAL = _CONFIG.cli.startup_check_interval
 
+    # Resolve GPU device flag (auto-detect CDI if "auto")
+    resolved_gpu_flag = gpu_utils.get_gpu_device_flag(_CONFIG.runtime.gpu_device_flag)
+
     _MANAGER = ServiceManager(
         config_module.REGISTRY,
         _RUNTIME,
@@ -64,7 +68,7 @@ def _apply_cli_config(config) -> None:
         network_ipv6=_CONFIG.runtime.network.ipv6,
         network_internal=_CONFIG.runtime.network.internal,
         restart_policy=_CONFIG.runtime.restart_policy,
-        gpu_device_flag=_CONFIG.runtime.gpu_device_flag,
+        gpu_device_flag=resolved_gpu_flag,
         required_dependencies=_CONFIG.dependencies.required,
         optional_dependencies=_CONFIG.dependencies.optional,
         skip_dependency_checks=_CONFIG.dependencies.skip_checks,

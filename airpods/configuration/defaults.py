@@ -56,6 +56,7 @@ DEFAULT_CONFIG_DICT = {
             "env": {
                 "OLLAMA_ORIGINS": "*",
                 "OLLAMA_HOST": "0.0.0.0",
+                "OLLAMA_DEBUG": "1",
             },
             "resources": {},
             "needs_webui_secret": False,

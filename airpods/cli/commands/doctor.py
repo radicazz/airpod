@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from airpods import __version__, ui
+from airpods import __version__, gpu as gpu_utils, ui
 from airpods.logging import console
 from airpods.system import detect_cuda_compute_capability, detect_dns_servers
 from airpods.updates import (
@@ -45,6 +45,27 @@ def register(app: typer.Typer) -> CommandMap:
                 has_gpu_cap, gpu_name_cap, compute_cap, "cu126"
             )
             console.print(f"CUDA: [muted]{cuda_info}[/]")
+
+        # Check GPU passthrough setup (NVIDIA Container Toolkit + CDI)
+        toolkit_installed, toolkit_version = gpu_utils.detect_nvidia_container_toolkit()
+        if toolkit_installed:
+            console.print(f"NVIDIA Container Toolkit: [ok]{toolkit_version}[/]")
+
+            # Check CDI configuration
+            if gpu_utils.check_cdi_available():
+                console.print("NVIDIA CDI: [ok]configured[/]")
+            else:
+                console.print("NVIDIA CDI: [warn]not configured[/]")
+                console.print("[dim]GPU pass-through may not work. Run:[/]")
+                console.print(
+                    "[dim]  sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml[/]"
+                )
+        else:
+            console.print(f"NVIDIA Container Toolkit: [warn]{toolkit_version}[/]")
+            if has_gpu_cap:
+                console.print(
+                    "[dim]GPU detected but Container Toolkit not found. Install it for GPU support in containers.[/]"
+                )
 
         # Networking hints (common cause of HuggingFace/Ollama download failures)
         effective_dns = manager.network_dns_servers or detect_dns_servers()
