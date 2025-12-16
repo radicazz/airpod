@@ -18,6 +18,7 @@ from typing import (
 
 from airpods import state
 from airpods.runtime import ContainerRuntime, ContainerRuntimeError
+from airpods.runtime_mode import get_resource_prefix
 from airpods.system import CheckResult, check_dependency, detect_dns_servers, detect_gpu
 
 
@@ -148,7 +149,9 @@ class ServiceManager:
     ):
         self.registry = registry
         self.runtime = runtime
-        self.network_name = network_name
+        # Apply resource prefix based on runtime mode
+        prefix = get_resource_prefix()
+        self.network_name = network_name.replace("airpods", prefix)
         self.network_driver = network_driver
         self.network_subnet = network_subnet
         self.network_gateway = network_gateway
