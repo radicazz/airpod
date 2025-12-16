@@ -70,7 +70,9 @@ def test_stop_reports_only_running_services(
 
     assert result.exit_code == 0
     stdout = result.stdout
-    assert "Stopping ollama" in stdout
-    assert "Stopping open-webui" in stdout
-    assert "Stopping comfyui" not in stdout
+    # Check for concise output (verbose messages removed in normal mode)
+    assert "✓ Stopped 2 service" in stdout
     assert "not found" in stdout.lower()
+    # Verbose messages should not appear in normal mode
+    assert "Stopping ollama" not in stdout
+    assert "Stopping open-webui" not in stdout

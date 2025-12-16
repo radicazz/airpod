@@ -165,28 +165,33 @@ def register(app: typer.Typer) -> CommandMap:
         # Only process services that need to be started
         specs_to_start = needs_start
 
-        # Show GPU status
-        gpu_available, gpu_detail = detect_gpu()
-        if gpu_available:
-            console.print(f"GPU: [ok]enabled[/] ({gpu_detail})")
-        else:
-            console.print(f"GPU: [muted]not detected[/] ({gpu_detail})")
-
-        # Show CUDA detection info if ComfyUI is being started
-        comfyui_specs = [s for s in specs_to_start if s.name == "comfyui"]
-        if comfyui_specs:
-            has_gpu_cap, gpu_name_cap, compute_cap = detect_cuda_compute_capability()
-            if has_gpu_cap and compute_cap:
-                selected_cuda = select_cuda_version(compute_cap)
-                cuda_info = get_cuda_info_display(
-                    has_gpu_cap, gpu_name_cap, compute_cap, selected_cuda
-                )
-                console.print(f"CUDA: [ok]{cuda_info}[/]")
+        # Show GPU status (verbose only)
+        if verbose:
+            gpu_available, gpu_detail = detect_gpu()
+            if gpu_available:
+                console.print(f"GPU: [ok]enabled[/] ({gpu_detail})")
             else:
-                cuda_info = get_cuda_info_display(
-                    has_gpu_cap, gpu_name_cap, compute_cap, "cu126"
+                console.print(f"GPU: [muted]not detected[/] ({gpu_detail})")
+
+            # Show CUDA detection info if ComfyUI is being started
+            comfyui_specs = [s for s in specs_to_start if s.name == "comfyui"]
+            if comfyui_specs:
+                has_gpu_cap, gpu_name_cap, compute_cap = (
+                    detect_cuda_compute_capability()
                 )
-                console.print(f"CUDA: [muted]{cuda_info}[/]")
+                if has_gpu_cap and compute_cap:
+                    selected_cuda = select_cuda_version(compute_cap)
+                    cuda_info = get_cuda_info_display(
+                        has_gpu_cap, gpu_name_cap, compute_cap, selected_cuda
+                    )
+                    console.print(f"CUDA: [ok]{cuda_info}[/]")
+                else:
+                    cuda_info = get_cuda_info_display(
+                        has_gpu_cap, gpu_name_cap, compute_cap, "cu126"
+                    )
+                    console.print(f"CUDA: [muted]{cuda_info}[/]")
+        else:
+            gpu_available, gpu_detail = detect_gpu()
 
         # Only ensure network/volumes if we're actually starting something
         if reset_network:
@@ -246,7 +251,8 @@ def register(app: typer.Typer) -> CommandMap:
 
         # Start services with simple logging
         for spec in specs_to_start:
-            console.print(f"Starting [accent]{spec.name}[/]...")
+            if verbose:
+                console.print(f"Starting [accent]{spec.name}[/]...")
 
             try:
                 with status_spinner(f"Launching {spec.name}"):
@@ -255,6 +261,8 @@ def register(app: typer.Typer) -> CommandMap:
                         gpu_available=gpu_available,
                         force_cpu_override=force_cpu,
                     )
+                if verbose:
+                    console.print(f"[ok]✓ {spec.name} launched[/]")
             except Exception as e:
                 console.print(f"[error]✗ Failed to start {spec.name}: {e}[/]")
                 failed_services.append(spec.name)

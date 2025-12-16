@@ -68,7 +68,7 @@ def render_status(specs: List[ServiceSpec]) -> None:
     pod_rows = manager.pod_status_rows()
     if pod_rows is None:
         pod_rows = {}
-    table = ui.themed_table(title="[accent]Pods[/accent]")
+    table = ui.themed_table()
     table.add_column("Service")
     table.add_column("Status")
     table.add_column("Uptime", justify="right")

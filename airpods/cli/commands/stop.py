@@ -47,46 +47,33 @@ def register(app: typer.Typer) -> CommandMap:
         # Check verbose mode from context
         verbose = is_verbose_mode(ctx)
 
-        # Collect uptimes before stopping (only if verbose or needed for summary)
+        # Collect uptimes before stopping (only if verbose)
         uptimes: dict[str, str] = {}
-        total_uptime_seconds = 0
-        for spec in specs:
-            try:
-                import subprocess
+        if verbose:
+            for spec in specs:
+                try:
+                    import subprocess
 
-                result = subprocess.run(
-                    [
-                        "podman",
-                        "container",
-                        "inspect",
-                        spec.container,
-                        "--format",
-                        "{{.State.StartedAt}}",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    from airpods.cli.status_view import _format_uptime
+                    result = subprocess.run(
+                        [
+                            "podman",
+                            "container",
+                            "inspect",
+                            spec.container,
+                            "--format",
+                            "{{.State.StartedAt}}",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        from airpods.cli.status_view import _format_uptime
 
-                    started_at = result.stdout.strip()
-                    uptimes[spec.name] = _format_uptime(started_at)
-
-                    # Calculate total seconds for summary
-                    from datetime import datetime
-
-                    parts = started_at.split()
-                    if len(parts) >= 2:
-                        dt_str = f"{parts[0]} {parts[1].split('.')[0]}"
-                        # Skip invalid/epoch timestamps
-                        if not dt_str.startswith("0001-"):
-                            started = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-                            now = datetime.now()
-                            delta = now - started
-                            total_uptime_seconds += int(delta.total_seconds())
-            except Exception:
-                uptimes[spec.name] = "-"
+                        started_at = result.stdout.strip()
+                        uptimes[spec.name] = _format_uptime(started_at)
+                except Exception:
+                    uptimes[spec.name] = "-"
 
         if remove and specs:
             lines = "\n".join(f"  - {spec.name} ({spec.pod})" for spec in specs)
@@ -128,9 +115,7 @@ def register(app: typer.Typer) -> CommandMap:
                         console.print(
                             f"Stopping [accent]{spec.name}[/] (uptime: {uptime})..."
                         )
-                    else:
-                        console.print(f"Stopping [accent]{spec.name}[/]...")
-                else:
+                elif verbose:
                     console.print(f"Removing [accent]{spec.name}[/]...")
 
                 manager.stop_service(spec, remove=True, timeout=timeout)
@@ -154,8 +139,6 @@ def register(app: typer.Typer) -> CommandMap:
             if verbose:
                 uptime = uptimes.get(spec.name, "-")
                 console.print(f"Stopping [accent]{spec.name}[/] (uptime: {uptime})...")
-            else:
-                console.print(f"Stopping [accent]{spec.name}[/]...")
 
             existed = manager.stop_service(spec, remove=False, timeout=timeout)
             if not existed:
@@ -174,20 +157,8 @@ def register(app: typer.Typer) -> CommandMap:
 
         action = "Removed" if remove else "Stopped"
         if stopped_count > 0:
-            total_uptime_display = ""
-            if total_uptime_seconds > 0:
-                from airpods.cli.status_view import _format_uptime
-                from datetime import datetime
-
-                fake_start = datetime.now().timestamp() - total_uptime_seconds
-                fake_str = datetime.fromtimestamp(fake_start).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-                total_display = _format_uptime(fake_str + " -0500 EST")
-                total_uptime_display = f" • Total uptime: [accent]{total_display}[/]"
-
             console.print(
-                f"[ok]✓ {action} {stopped_count} service{'s' if stopped_count != 1 else ''}{total_uptime_display}[/]"
+                f"[ok]✓ {action} {stopped_count} service{'s' if stopped_count != 1 else ''}[/]"
             )
 
         if not_found_count > 0:

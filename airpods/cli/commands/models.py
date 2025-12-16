@@ -74,7 +74,7 @@ def list_models_cmd(
             return
 
         # Create Rich table
-        table = ui.themed_table(title="[accent]Installed Models[/accent]")
+        table = ui.themed_table()
         table.add_column("Model", no_wrap=True)
         table.add_column("Size", justify="right")
         table.add_column("Modified")
