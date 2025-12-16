@@ -15,7 +15,6 @@ except ImportError:  # pragma: no cover
 
 from airpods import state
 from airpods.paths import detect_repo_root
-from airpods.runtime_mode import is_dev_mode
 
 from .defaults import DEFAULT_CONFIG_DICT
 from .errors import ConfigurationError
@@ -55,18 +54,15 @@ def locate_config_file() -> Optional[Path]:
                 return _resolve_and_register(candidate)
         return None
 
-    # Development mode: check repo root
-    if is_dev_mode():
-        repo_root = detect_repo_root()
-        if repo_root:
-            for candidate in (
-                repo_root / "configs" / "config.toml",
-                repo_root / "config.toml",
-            ):
-                if candidate.exists():
-                    return _resolve_and_register(candidate)
+    repo_root = detect_repo_root()
+    if repo_root:
+        for candidate in (
+            repo_root / "configs" / "config.toml",
+            repo_root / "config.toml",
+        ):
+            if candidate.exists():
+                return _resolve_and_register(candidate)
 
-    # Production mode: only check XDG directories (skip repo root)
     xdg_home = os.environ.get("XDG_CONFIG_HOME")
     if xdg_home:
         base = Path(xdg_home).expanduser() / "airpods"

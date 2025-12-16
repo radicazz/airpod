@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Optional, Union
 
 from airpods.paths import detect_repo_root
-from airpods.runtime_mode import is_dev_mode
 
 STATE_ROOT_ENV = "AIRPODS_HOME"
 _STATE_ROOT_OVERRIDE: Optional[Path] = None
@@ -22,22 +21,13 @@ def _detect_repo_root() -> Optional[Path]:
 def state_root() -> Path:
     if _STATE_ROOT_OVERRIDE is not None:
         return _STATE_ROOT_OVERRIDE
-
-    # Check for explicit AIRPODS_HOME override
     env = os.environ.get(STATE_ROOT_ENV)
     if env:
         return Path(env).expanduser().resolve()
-
-    # Development mode: always use repo root
-    if is_dev_mode():
-        repo_root = _detect_repo_root()
-        if repo_root:
-            return repo_root
-        # Fallback if repo root can't be detected in dev mode
-        return Path.cwd()
-
-    # Production mode: always use XDG directories (never repo root)
     xdg_base = os.environ.get("XDG_CONFIG_HOME")
+    repo_root = _detect_repo_root()
+    if repo_root and os.access(repo_root, os.W_OK) and not xdg_base:
+        return repo_root
     if xdg_base:
         return Path(xdg_base).expanduser() / "airpods"
     return Path.home() / ".config" / "airpods"

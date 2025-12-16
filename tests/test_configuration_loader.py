@@ -15,7 +15,6 @@ from airpods.configuration.schema import AirpodsConfig
 
 
 def test_locate_prefers_repo_over_xdg(tmp_path, monkeypatch):
-    """In dev mode, repo root is preferred over XDG directories."""
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     repo_config = repo_root / "configs" / "config.toml"
@@ -29,16 +28,10 @@ def test_locate_prefers_repo_over_xdg(tmp_path, monkeypatch):
 
     monkeypatch.delenv("AIRPODS_HOME", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_home))
-    monkeypatch.setenv("AIRPODS_DEV_MODE", "1")  # Enable dev mode
 
     loader_module.locate_config_file.cache_clear()
     state.clear_state_root_override()
     monkeypatch.setattr(loader_module, "detect_repo_root", lambda: repo_root)
-
-    # Clear runtime mode cache to pick up the env var
-    from airpods import runtime_mode
-
-    runtime_mode.is_dev_mode.cache_clear()
 
     assert loader_module.locate_config_file() == repo_config.resolve()
     assert state.state_root() == repo_root.resolve()

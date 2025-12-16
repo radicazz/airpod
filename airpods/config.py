@@ -10,7 +10,6 @@ from airpods.services import ServiceRegistry, ServiceSpec, VolumeMount
 from airpods.cuda import select_cuda_version, select_comfyui_image
 from airpods.system import detect_cuda_compute_capability
 from airpods.logging import console
-from airpods.runtime_mode import get_resource_prefix
 
 
 ENABLE_COMFY_CUDA_LOG = False
@@ -102,15 +101,10 @@ def _service_spec_from_config(
     # Resolve CUDA-aware image for ComfyUI
     resolved_image = _resolve_cuda_image(name, service, config)
 
-    # Apply resource prefix to pod and container names based on runtime mode
-    prefix = get_resource_prefix()
-    pod_name = service.pod.replace("airpods", prefix)
-    container_name = service.container.replace("airpods", prefix)
-
     return ServiceSpec(
         name=name,
-        pod=pod_name,
-        container=container_name,
+        pod=service.pod,
+        container=service.container,
         image=resolved_image,
         ports=ports,
         env=dict(service.env),
