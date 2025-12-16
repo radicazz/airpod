@@ -94,6 +94,15 @@ def pull_image(image: str) -> None:
         raise PodmanError(msg) from exc
 
 
+def image_exists(image: str) -> bool:
+    """Check if an image exists locally."""
+    try:
+        _run(["image", "inspect", image])
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
 def image_size(image: str) -> Optional[str]:
     """Get the size of an image in human-readable format."""
     try:
@@ -107,6 +116,50 @@ def image_size(image: str) -> Optional[str]:
         return f"{size_bytes:.1f}TB"
     except (subprocess.CalledProcessError, ValueError):
         return None
+
+
+def image_size_bytes(image: str) -> Optional[int]:
+    """Get the size of an image in bytes."""
+    try:
+        proc = _run(["image", "inspect", image, "--format", "{{.Size}}"])
+        return int(proc.stdout.strip())
+    except (subprocess.CalledProcessError, ValueError):
+        return None
+
+
+def get_remote_image_size(image: str) -> Optional[int]:
+    """Get the size of a remote image in bytes using skopeo.
+
+    Falls back to None if skopeo is not available.
+    """
+    try:
+        # Try using skopeo for accurate remote size
+        proc = subprocess.run(
+            ["skopeo", "inspect", f"docker://{image}"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+        )
+        if proc.returncode == 0:
+            import json
+
+            data = json.loads(proc.stdout)
+            # Sum up all layer sizes
+            if "LayersData" in data:
+                return sum(layer.get("Size", 0) for layer in data["LayersData"])
+            # Fallback to Size field if available
+            if "Size" in data:
+                return data["Size"]
+    except (
+        subprocess.TimeoutExpired,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        KeyError,
+    ):
+        pass
+
+    return None
 
 
 def pod_exists(pod: str) -> bool:
