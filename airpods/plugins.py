@@ -77,7 +77,7 @@ def _discover_function_plugins(base_dir: Path) -> list[PluginModule]:
 
 
 def get_plugins_source_dir() -> Path:
-    """Get the source directory containing bundled plugins."""
+    """Get the source directory containing bundled Open WebUI plugins."""
     source_root = detect_repo_root(Path(__file__).resolve())
     if source_root is None:
         # When installed as a package, fall back to the site-packages root
@@ -86,8 +86,22 @@ def get_plugins_source_dir() -> Path:
 
 
 def get_plugins_target_dir() -> Path:
-    """Get the target directory where plugins should be copied."""
+    """Get the target directory where Open WebUI plugins should be copied."""
     return volumes_dir() / "webui_plugins"
+
+
+def get_comfyui_plugins_source_dir() -> Path:
+    """Get the source directory containing bundled ComfyUI custom nodes."""
+    source_root = detect_repo_root(Path(__file__).resolve())
+    if source_root is None:
+        # When installed as a package, fall back to the site-packages root
+        source_root = Path(__file__).resolve().parent.parent
+    return source_root / "plugins" / "comfyui"
+
+
+def get_comfyui_plugins_target_dir() -> Path:
+    """Get the target directory where ComfyUI custom nodes should be copied."""
+    return volumes_dir() / "comfyui_custom_nodes"
 
 
 def sync_plugins(force: bool = False, prune: bool = True) -> int:
@@ -136,6 +150,106 @@ def sync_plugins(force: bool = False, prune: bool = True) -> int:
             rel = existing.relative_to(target_dir)
             if rel not in desired_relpaths and existing.name != "__init__.py":
                 existing.unlink()
+
+    return synced
+
+
+def sync_comfyui_plugins(force: bool = False, prune: bool = True) -> int:
+    """Sync bundled ComfyUI custom nodes to the comfyui_custom_nodes volume directory.
+
+    ComfyUI custom nodes can be either:
+    - Directory-based packages (with __init__.py)
+    - Single .py files
+
+    Args:
+        force: If True, overwrite existing custom nodes even if they're newer.
+        prune: If True, delete custom nodes in target that no longer exist in source.
+
+    Returns:
+        Number of custom nodes synced (directories + files).
+    """
+    source_dir = get_comfyui_plugins_source_dir()
+    target_dir = get_comfyui_plugins_target_dir()
+
+    if not source_dir.exists():
+        console.print(
+            f"[warn]ComfyUI plugins source directory not found: {source_dir}[/]"
+        )
+        return 0
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    synced = 0
+
+    # Track what we're syncing (for pruning)
+    desired_dirs: set[Path] = set()
+    desired_files: set[Path] = set()
+
+    # Sync directory-based custom nodes (Python packages)
+    for item in source_dir.iterdir():
+        if not item.is_dir() or item.name.startswith((".", "_")):
+            continue
+
+        # Skip if not a Python package (no __init__.py)
+        if not (item / "__init__.py").exists():
+            continue
+
+        rel_path = item.relative_to(source_dir)
+        desired_dirs.add(rel_path)
+        target_item = target_dir / rel_path
+
+        should_copy = force or not target_item.exists()
+        if not should_copy and target_item.exists():
+            # Compare modification times of the entire directory tree
+            source_mtime = max(
+                (f.stat().st_mtime for f in item.rglob("*") if f.is_file()),
+                default=0,
+            )
+            target_mtime = max(
+                (f.stat().st_mtime for f in target_item.rglob("*") if f.is_file()),
+                default=0,
+            )
+            should_copy = source_mtime > target_mtime
+
+        if should_copy:
+            if target_item.exists():
+                shutil.rmtree(target_item)
+            shutil.copytree(item, target_item)
+            synced += 1
+
+    # Sync single-file custom nodes (.py files)
+    for item in source_dir.iterdir():
+        if not item.is_file() or not item.name.endswith(".py"):
+            continue
+        if item.name.startswith("_"):
+            continue
+
+        rel_path = item.relative_to(source_dir)
+        desired_files.add(rel_path)
+        target_item = target_dir / rel_path
+
+        should_copy = force or not target_item.exists()
+        if not should_copy and target_item.exists():
+            source_mtime = item.stat().st_mtime
+            target_mtime = target_item.stat().st_mtime
+            should_copy = source_mtime > target_mtime
+
+        if should_copy:
+            shutil.copy2(item, target_item)
+            synced += 1
+
+    # Prune removed custom nodes
+    if prune:
+        for item in target_dir.iterdir():
+            rel_path = item.relative_to(target_dir)
+            if item.is_dir():
+                if rel_path not in desired_dirs and not item.name.startswith(
+                    (".", "_")
+                ):
+                    shutil.rmtree(item)
+            elif item.is_file() and item.name.endswith(".py"):
+                if rel_path not in desired_files and not item.name.startswith("_"):
+                    item.unlink()
 
     return synced
 

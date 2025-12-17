@@ -186,3 +186,88 @@ def test_resolve_plugin_owner_admin_mode_uses_system_when_missing(
 
     owner = plugins.resolve_plugin_owner_user_id("open-webui-0", mode="admin")
     assert owner == "system"
+
+
+def test_sync_comfyui_plugins_copies_directories(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source_dir = tmp_path / "plugins" / "comfyui"
+    source_dir.mkdir(parents=True)
+
+    # Create a directory-based custom node (package with __init__.py)
+    (source_dir / "custom_node_a").mkdir()
+    (source_dir / "custom_node_a" / "__init__.py").write_text(
+        "# Custom node A", encoding="utf-8"
+    )
+    (source_dir / "custom_node_a" / "node.py").write_text(
+        "# Node implementation", encoding="utf-8"
+    )
+
+    # Create a single-file custom node
+    (source_dir / "simple_node.py").write_text("# Simple node", encoding="utf-8")
+
+    target_root = tmp_path / "state" / "volumes"
+    target_dir = target_root / "comfyui_custom_nodes"
+
+    monkeypatch.setattr(plugins, "detect_repo_root", lambda _start=None: tmp_path)
+    monkeypatch.setattr(plugins, "volumes_dir", lambda: target_root)
+
+    synced = plugins.sync_comfyui_plugins(force=True, prune=False)
+
+    assert synced == 2
+    assert (target_dir / "custom_node_a" / "__init__.py").exists()
+    assert (target_dir / "custom_node_a" / "node.py").exists()
+    assert (target_dir / "simple_node.py").exists()
+
+
+def test_sync_comfyui_plugins_prunes_removed_items(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source_dir = tmp_path / "plugins" / "comfyui"
+    source_dir.mkdir(parents=True)
+
+    # Create one custom node in source
+    (source_dir / "custom_node_a").mkdir()
+    (source_dir / "custom_node_a" / "__init__.py").write_text(
+        "# Custom node A", encoding="utf-8"
+    )
+
+    target_root = tmp_path / "state" / "volumes"
+    target_dir = target_root / "comfyui_custom_nodes"
+    target_dir.mkdir(parents=True)
+
+    # Create legacy items in target that don't exist in source
+    (target_dir / "old_node").mkdir()
+    (target_dir / "old_node" / "__init__.py").write_text("# Old", encoding="utf-8")
+    (target_dir / "legacy.py").write_text("# Legacy", encoding="utf-8")
+
+    monkeypatch.setattr(plugins, "detect_repo_root", lambda _start=None: tmp_path)
+    monkeypatch.setattr(plugins, "volumes_dir", lambda: target_root)
+
+    synced = plugins.sync_comfyui_plugins(force=True, prune=True)
+
+    assert synced == 1
+    assert (target_dir / "custom_node_a").exists()
+    assert not (target_dir / "old_node").exists()
+    assert not (target_dir / "legacy.py").exists()
+
+
+def test_sync_comfyui_plugins_skips_non_package_dirs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source_dir = tmp_path / "plugins" / "comfyui"
+    source_dir.mkdir(parents=True)
+
+    # Create a directory without __init__.py (not a package)
+    (source_dir / "not_a_package").mkdir()
+    (source_dir / "not_a_package" / "readme.txt").write_text("Docs", encoding="utf-8")
+
+    target_root = tmp_path / "state" / "volumes"
+
+    monkeypatch.setattr(plugins, "detect_repo_root", lambda _start=None: tmp_path)
+    monkeypatch.setattr(plugins, "volumes_dir", lambda: target_root)
+
+    synced = plugins.sync_comfyui_plugins(force=True, prune=False)
+
+    assert synced == 0
+    assert not (target_root / "comfyui_custom_nodes" / "not_a_package").exists()

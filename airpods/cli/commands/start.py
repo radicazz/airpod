@@ -216,6 +216,17 @@ def register(app: typer.Typer) -> CommandMap:
             elif verbose:
                 console.print("[info]Plugins already up-to-date[/]")
 
+        # Sync ComfyUI custom nodes if comfyui is being started
+        comfyui_specs = [s for s in specs_to_start if s.name == "comfyui"]
+        if comfyui_specs:
+            with status_spinner("Syncing ComfyUI custom nodes"):
+                synced = plugins.sync_comfyui_plugins()
+            # Only show custom node sync messages if changes were made
+            if synced > 0:
+                console.print(f"[ok]Synced {synced} custom node(s)[/]")
+            elif verbose:
+                console.print("[info]Custom nodes already up-to-date[/]")
+
         # Simple log-based startup process
         service_urls: dict[str, str] = {}
         failed_services = []

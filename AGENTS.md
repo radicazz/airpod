@@ -58,11 +58,12 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 - Errors surfaced with clear remediation (install Podman, start podman machine, check GPU drivers).
 
 ## Data & Images
-- Volumes: `airpods_ollama_data`, `airpods_webui_data`, and `airpods_comfyui_data` are bind-mounted under `$AIRPODS_HOME/volumes/` (e.g., `$AIRPODS_HOME/volumes/airpods_ollama_data`), while the ComfyUI workspace bind (`bind://comfyui/workspace`) lives at `$AIRPODS_HOME/volumes/comfyui/workspace`.
+- Volumes: `airpods_ollama_data`, `airpods_webui_data`, `airpods_comfyui_data`, and `comfyui_custom_nodes` are bind-mounted under `$AIRPODS_HOME/volumes/` (e.g., `$AIRPODS_HOME/volumes/airpods_ollama_data`), while the ComfyUI workspace bind (`bind://comfyui/workspace`) lives at `$AIRPODS_HOME/volumes/comfyui/workspace`.
 - Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`, `docker.io/yanwk/comfyui-boot:cu128-slim`; pulled during `start` (or via `start --pre-fetch`).
 - Secrets: Open WebUI secret persisted at `$AIRPODS_HOME/configs/webui_secret` (or `$XDG_CONFIG_HOME/airpods/configs/webui_secret` or `~/.config/airpods/configs/webui_secret`) during `start` when Open WebUI is enabled, injected via the `needs_webui_secret` flag.
 - Networking: All services use host networking. Open WebUI targets Ollama via `http://localhost:11434` (configurable via templates).
 - Configuration: Optional `config.toml` in `configs/` subdirectory at `$AIRPODS_HOME` or XDG paths; deep-merged with defaults. All airpods configuration files (config.toml, webui_secret, etc.) are stored together in the `configs/` subdirectory.
+- Plugins: Open WebUI plugins live in `plugins/open-webui/` and are synced to `webui_plugins` volume during `start`. ComfyUI custom nodes live in `plugins/comfyui/` and are synced to `comfyui_custom_nodes` volume during `start`. Both support directory-based packages and single-file modules.
 
 ## Testing Approach
 - Unit tests mock subprocess interactions to validate command flow and flags.

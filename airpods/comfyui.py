@@ -106,12 +106,14 @@ def get_comfyui_volumes(provider: ComfyProvider) -> Dict[str, Tuple[str, str]]:
         return {
             "basedir": ("comfyui/basedir", "/basedir"),
             "run": ("comfyui/run", "/comfy/mnt"),
+            "custom_nodes": ("comfyui_custom_nodes", "/root/ComfyUI/custom_nodes"),
         }
 
     # yanwk default structure
     return {
         "workspace": ("comfyui/workspace", "/workspace"),
         "models": ("airpods_comfyui_data", "/root/ComfyUI/models"),
+        "custom_nodes": ("comfyui_custom_nodes", "/root/ComfyUI/custom_nodes"),
     }
 
 

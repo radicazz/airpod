@@ -93,6 +93,10 @@ DEFAULT_CONFIG_DICT = {
                     "source": "bind://airpods_comfyui_data",
                     "target": "/root/ComfyUI/models",
                 },
+                "custom_nodes": {
+                    "source": "bind://comfyui_custom_nodes",
+                    "target": "/root/ComfyUI/custom_nodes",
+                },
             },
             "gpu": {"enabled": True, "force_cpu": False},
             "health": {"path": "/", "expected_status": [200, 299]},
