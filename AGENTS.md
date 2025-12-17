@@ -5,7 +5,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 
 ## Command Surface
 - Global options: `-v/--version` prints the CLI version; `-h/--help` shows the custom help view plus alias table.
-- `start [service...]`: Ensures volumes/images, then launches pods (default both) while explaining when volumes, pods, or containers are reused vs newly created. Shows download confirmation with sizes and disk space checks (skip with `--yes`). Waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds, with health-less services marked ready once their pod is running. Skips recreation if containers are already running. GPU auto-detected and attached to Ollama; CPU fallback allowed. `--pre-fetch` downloads service images and exits without starting containers for ahead-of-time cache warmups. Exposed aliases: `up`, `run`.
+- `start [service...]`: Ensures volumes/images, then launches pods (default both) while explaining when volumes, pods, or containers are reused vs newly created. Shows download confirmation with sizes and disk space checks (skip with `--yes`). Waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds, with health-less services marked ready once their pod is running. Skips recreation if containers are already running. GPU auto-detected and attached to Ollama; CPU fallback allowed. `--pre-fetch` downloads service images and exits without starting containers for ahead-of-time cache warmups. Service aliases: `comfy`/`comfyui`/`comfy-ui` → `comfyui`. Exposed aliases: `up`, `run`.
 - `stop [service...]`: Graceful stop; optional removal of pods while preserving volumes by default, with an interactive confirmation prompt before destructive removal. Exposed aliases: `down`.
 - `status [service...]`: Compact Rich table (Service / Status / Info) summarizing HTTP health plus friendly URLs for running pods, or pod status + port summaries for stopped ones; redundant columns (pod name, uptime, counts) were removed for readability. Exposed aliases: `ps`, `info`.
 - `logs [service...]`: Tail logs for specified services or all; supports follow/since/lines.
@@ -13,8 +13,14 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 - `models`: Manage Ollama models with subcommands:
   - `search <query>`: Search Ollama's registry for models by name/tag
   - `pull <model>`: Download a model to local Ollama instance
-  - `list`: Show installed models with sizes
+  - `list` (aliases: `ls`): Show installed models with sizes
   - `remove <model>`: Delete a local model
+- `workflows`: ComfyUI workflow and model utilities:
+  - `list` (aliases: `ls`): List saved workflow JSON files
+  - `sync <workflow>`: Install missing models for a workflow
+  - `pull <url>`: Download a single model file
+  - `path`: Show workspace/workflows/models paths
+  - `api`: Show API endpoints
 - `backup`: Create compressed archive of configs, Open WebUI database, plugins, and Ollama metadata (not model binaries). Supports custom destination, filename, and optional SQL dump.
 - `restore <archive>`: Unpack backup archive and restore configs, WebUI data, and metadata. Backs up existing data first. Includes flags to skip configs/db/plugins/models.
 - `clean`: Remove volumes, images, configs, and user data created by airpods. Offers granular control via flags:

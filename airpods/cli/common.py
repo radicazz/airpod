@@ -84,6 +84,12 @@ COMMAND_ALIASES = {
     "info": "status",
 }
 
+SERVICE_NAME_ALIASES = {
+    "comfy": "comfyui",
+    "comfyui": "comfyui",
+    "comfy-ui": "comfyui",
+}
+
 ALIAS_HELP_TEMPLATE = "[alias]Alias for {canonical}[/]"
 
 
@@ -95,9 +101,16 @@ def refresh_cli_context() -> None:
 
 
 def resolve_services(names: Optional[list[str]]) -> list[ServiceSpec]:
-    """Resolve names to service specs, surfacing Typer-friendly errors."""
+    """Resolve names to service specs with alias support, surfacing Typer-friendly errors."""
+    if names is None:
+        names = []
+    normalized = []
+    for name in names:
+        lower_name = name.lower()
+        canonical = SERVICE_NAME_ALIASES.get(lower_name, lower_name)
+        normalized.append(canonical)
     try:
-        return manager.resolve(names)
+        return manager.resolve(normalized)
     except UnknownServiceError as exc:  # noqa: B904
         raise typer.BadParameter(str(exc)) from exc
 
