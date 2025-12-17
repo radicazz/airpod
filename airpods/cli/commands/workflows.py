@@ -531,7 +531,7 @@ def list_cmd(
     help_: bool = command_help_option(),
     limit: int = typer.Option(50, "--limit", help="Maximum workflows to show."),
 ) -> None:
-    """List saved workflow JSON files."""
+    """List saved workflow JSON files with model info."""
     maybe_show_command_help(ctx, help_)
     root = comfyui_workflows_dir()
     if not root.exists():
@@ -544,11 +544,79 @@ def list_cmd(
         return
 
     shown = workflows[: max(1, limit)]
+
+    # Try to get models directory for checking sync status
+    try:
+        models_root = comfyui_models_dir()
+    except typer.BadParameter:
+        # If we can't access models dir, just show basic list
+        for path in shown:
+            rel = path.relative_to(root)
+            console.print(f"- [accent]{rel}[/]")
+        if len(workflows) > len(shown):
+            console.print(f"[dim]…and {len(workflows) - len(shown)} more[/dim]")
+        return
+
+    # Build table with workflow info
+    from rich.table import Table
+
+    table = Table(show_header=True, show_edge=False, show_lines=False, padding=(0, 2))
+    table.add_column("Workflow", style="cyan", no_wrap=False)
+    table.add_column("Models", justify="right", style="yellow")
+    table.add_column("Status", style="green")
+
     for path in shown:
         rel = path.relative_to(root)
-        console.print(f"- [accent]{rel}[/]")
+
+        # Try to load and analyze the workflow
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            refs = _dedupe_refs(extract_model_refs(data))
+
+            if not refs:
+                # No models found
+                table.add_row(str(rel), "0", "[dim]—[/]")
+                continue
+
+            # Check how many models are missing
+            missing_count = 0
+            for ref in refs:
+                filename = ref.filename
+                if ref.folder:
+                    # Check in the specific folder
+                    subdir = ref.subdir or ""
+                    candidate = models_root / ref.folder / subdir / filename
+                    if not candidate.exists():
+                        missing_count += 1
+                else:
+                    # Check anywhere in models directory
+                    found = next(models_root.rglob(filename), None)
+                    if found is None:
+                        missing_count += 1
+
+            total = len(refs)
+            synced = total - missing_count
+
+            # Format status
+            if missing_count == 0:
+                status = "[ok]✓ synced[/]"
+            elif missing_count < total / 2:
+                status = f"[warn]⚠ {missing_count} missing[/]"
+            else:
+                status = f"[error]✗ {missing_count} missing[/]"
+
+            table.add_row(str(rel), str(total), status)
+
+        except Exception as e:
+            # If we can't parse the workflow, show basic info
+            table.add_row(str(rel), "?", f"[dim]error: {e}[/]")
+
+    console.print(table)
+
     if len(workflows) > len(shown):
-        console.print(f"[dim]…and {len(workflows) - len(shown)} more[/dim]")
+        console.print(
+            f"[dim]…and {len(workflows) - len(shown)} more (use --limit to show more)[/dim]"
+        )
 
 
 @workflows_app.command(name="api", context_settings=COMMAND_CONTEXT)

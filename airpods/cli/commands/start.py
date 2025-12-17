@@ -105,10 +105,15 @@ def _maybe_sync_plugins(
     if any(s.name == "comfyui" for s in specs):
         with status_spinner("Syncing ComfyUI custom nodes"):
             synced_comfyui = plugins.sync_comfyui_plugins()
+
+        # Always show custom node status, even if nothing was synced
+        total_nodes = plugins.count_comfyui_plugins()
         if synced_comfyui > 0:
-            console.print(f"[ok]Synced {synced_comfyui} custom node(s)[/]")
-        elif verbose:
-            console.print("[info]Custom nodes already up-to-date[/]")
+            console.print(
+                f"[ok]Synced {synced_comfyui} custom node(s) ({total_nodes} total active)[/]"
+            )
+        else:
+            console.print(f"[ok]ComfyUI: {total_nodes} custom node(s) active[/]")
 
     return synced_webui, synced_comfyui
 

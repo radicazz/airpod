@@ -1,6 +1,6 @@
 [project]
 name = "airpods"
-version = "0.20.0"
+version = "0.20.1"
 description = "Rich, user-friendly CLI for orchestrating local AI services with Podman."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"

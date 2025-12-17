@@ -268,6 +268,36 @@ def list_installed_plugins() -> list[str]:
     return sorted({module.id for module in modules})
 
 
+def count_comfyui_plugins() -> int:
+    """Count the number of installed ComfyUI custom nodes.
+
+    Returns:
+        Total count of custom node directories and single-file nodes.
+    """
+    target_dir = get_comfyui_plugins_target_dir()
+    if not target_dir.exists():
+        return 0
+
+    count = 0
+
+    # Count directory-based custom nodes (Python packages)
+    for item in target_dir.iterdir():
+        if item.is_dir() and not item.name.startswith((".", "_")):
+            if (item / "__init__.py").exists():
+                count += 1
+
+    # Count single-file custom nodes
+    for item in target_dir.iterdir():
+        if (
+            item.is_file()
+            and item.name.endswith(".py")
+            and not item.name.startswith("_")
+        ):
+            count += 1
+
+    return count
+
+
 def _podman_exec_python(
     container_name: str, code: str, timeout: int = 10
 ) -> subprocess.CompletedProcess[str]:
