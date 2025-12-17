@@ -588,8 +588,15 @@ def _interactive_select_folder(filename: str, models_root: Path) -> tuple[str, s
         query = Prompt.ask(
             f"Folder search for [accent]{filename}[/]", default=guess
         ).strip()
+        if query.lower().startswith(("http://", "https://")):
+            console.print(
+                "[warn]That looks like a URL. You'll be prompted for download URLs separately.[/]"
+            )
+            query = guess
         ranked = _fuzzy_rank(query, folders)
         shown = ranked[:10]
+        if guess not in shown:
+            shown = [guess, *[f for f in shown if f != guess]][:10]
 
         table = Table(show_header=True, show_edge=False, padding=(0, 2))
         table.add_column("#", style="dim", justify="right", width=3)
@@ -598,7 +605,9 @@ def _interactive_select_folder(filename: str, models_root: Path) -> tuple[str, s
             table.add_row(str(idx), folder)
         console.print(table)
 
-        choice = Prompt.ask("Select folder (number or name)", default="1").strip()
+        choice = Prompt.ask(
+            "Select folder (number or name, e.g. checkpoints)", default="1"
+        ).strip()
         selected: str | None = None
         if choice.isdigit():
             i = int(choice)
@@ -917,18 +926,18 @@ def sync_cmd(
         new_without_urls: list[tuple[ModelRef, Path, str | None, str]] = []
 
         for ref, dest, folder, url in without_urls:
+            entered_url = ""
+            if prompt_urls:
+                entered_url = Prompt.ask(
+                    f"URL for [accent]{ref.filename}[/] (blank to skip)", default=""
+                ).strip()
+
             selected_folder = folder
             subdir = ""
             if not selected_folder:
                 selected_folder, subdir = _interactive_select_folder(
                     ref.filename, models_root
                 )
-
-            entered_url = ""
-            if prompt_urls:
-                entered_url = Prompt.ask(
-                    f"URL for [accent]{ref.filename}[/] (blank to skip)", default=""
-                ).strip()
 
             entry: dict[str, str] = {}
             if selected_folder:
