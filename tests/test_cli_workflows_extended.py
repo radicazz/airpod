@@ -583,6 +583,36 @@ def test_remove_cmd_rejects_outside_paths(runner, tmp_path, monkeypatch):
     assert "outside" in result.stdout.lower()
 
 
+def test_sync_dry_run_interactive_folder_prompt_builds_mapping_template(
+    runner, tmp_path, monkeypatch
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    wf_path = workspace / "wf.json"
+    wf_path.write_text(
+        json.dumps({"1": {"inputs": {"ckpt_name": "missing.safetensors"}}})
+    )
+
+    models_root = tmp_path / "models"
+    (models_root / "checkpoints").mkdir(parents=True)
+
+    monkeypatch.setattr(workflows_module, "comfyui_workspace_dir", lambda: workspace)
+    monkeypatch.setattr(workflows_module, "comfyui_models_dir", lambda: models_root)
+
+    # Prompts:
+    # - folder search (default is fine): blank
+    # - select folder: 1
+    # - subdir: blank
+    result = runner.invoke(
+        app,
+        ["workflows", "sync", str(wf_path), "--dry-run", "--interactive"],
+        input="\n1\n\n",
+    )
+    assert result.exit_code == 0
+    assert '"missing.safetensors"' in result.stdout
+    assert '"folder": "checkpoints"' in result.stdout
+
+
 def test_api_cmd(runner):
     result = runner.invoke(app, ["workflows", "api"])
     assert result.exit_code == 0

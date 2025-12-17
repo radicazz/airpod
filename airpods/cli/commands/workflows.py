@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import difflib
 import re
 import time
 from dataclasses import dataclass
@@ -510,6 +511,116 @@ def _download_to_path(
     raise DownloadError(last_err or "download failed")
 
 
+def _list_model_folders(models_root: Path) -> list[str]:
+    standard = {
+        "checkpoints",
+        "loras",
+        "vae",
+        "clip",
+        "clip_vision",
+        "controlnet",
+        "unet",
+        "upscale_models",
+        "embeddings",
+    }
+    found: set[str] = set()
+    try:
+        for item in models_root.iterdir():
+            if item.is_dir():
+                found.add(item.name)
+    except OSError:
+        pass
+    return sorted(standard | found)
+
+
+def _guess_model_folder(filename: str, candidates: set[str]) -> str | None:
+    name = filename.lower()
+    if "lora" in name and "loras" in candidates:
+        return "loras"
+    if "vae" in name and "vae" in candidates:
+        return "vae"
+    if ("controlnet" in name or "control" in name) and "controlnet" in candidates:
+        return "controlnet"
+    if "clip_vision" in name and "clip_vision" in candidates:
+        return "clip_vision"
+    if "clip" in name and "clip" in candidates:
+        return "clip"
+    if "unet" in name and "unet" in candidates:
+        return "unet"
+    if "upscale" in name and "upscale_models" in candidates:
+        return "upscale_models"
+    if "checkpoints" in candidates:
+        return "checkpoints"
+    return None
+
+
+def _fuzzy_rank(query: str, choices: list[str]) -> list[str]:
+    q = query.strip().lower()
+    if not q:
+        return choices[:]
+
+    scored: list[tuple[int, float, str]] = []
+    for c in choices:
+        cl = c.lower()
+        score = 0
+        if cl == q:
+            score += 10_000
+        if cl.startswith(q):
+            score += 2_000
+        if q in cl:
+            score += 1_000
+        ratio = difflib.SequenceMatcher(a=q, b=cl).ratio()
+        scored.append((score, ratio, c))
+
+    scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return [c for _, __, c in scored]
+
+
+def _interactive_select_folder(filename: str, models_root: Path) -> tuple[str, str]:
+    from rich.prompt import Prompt
+    from rich.table import Table
+
+    folders = _list_model_folders(models_root)
+    folder_set = set(folders)
+    guess = _guess_model_folder(filename, folder_set) or folders[0]
+
+    while True:
+        query = Prompt.ask(
+            f"Folder search for [accent]{filename}[/]", default=guess
+        ).strip()
+        ranked = _fuzzy_rank(query, folders)
+        shown = ranked[:10]
+
+        table = Table(show_header=True, show_edge=False, padding=(0, 2))
+        table.add_column("#", style="dim", justify="right", width=3)
+        table.add_column("Folder", style="cyan", no_wrap=True)
+        for idx, folder in enumerate(shown, start=1):
+            table.add_row(str(idx), folder)
+        console.print(table)
+
+        choice = Prompt.ask("Select folder (number or name)", default="1").strip()
+        selected: str | None = None
+        if choice.isdigit():
+            i = int(choice)
+            if 1 <= i <= len(shown):
+                selected = shown[i - 1]
+        else:
+            selected = choice
+
+        if selected and selected in folder_set:
+            break
+
+        console.print(f"[warn]Invalid folder selection: {choice!r}. Try again.[/]")
+
+    subdir = Prompt.ask("Optional subdirectory (blank for none)", default="").strip()
+    if subdir:
+        p = Path(subdir)
+        if p.is_absolute() or ".." in p.parts:
+            raise typer.BadParameter("--subdir must be a relative path without '..'")
+        subdir = p.as_posix()
+    return selected, subdir
+
+
 @workflows_app.command(name="path", context_settings=COMMAND_CONTEXT)
 def path_cmd(
     ctx: typer.Context,
@@ -711,6 +822,11 @@ def sync_cmd(
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Overwrite existing files if present."
     ),
+    interactive: bool | None = typer.Option(
+        None,
+        "--interactive/--no-interactive",
+        help="Interactively resolve missing model folders/URLs when metadata is absent.",
+    ),
     timeout_s: int = typer.Option(
         300, "--timeout", help="Network read timeout in seconds for downloads."
     ),
@@ -781,13 +897,82 @@ def sync_cmd(
             folder_disp = folder or "?"
             console.print(f"  [dim]{ref.filename} → models/{folder_disp}[/]")
 
+    do_interactive = (
+        interactive if interactive is not None else (not dry_run and not yes)
+    )
+    if not with_urls and without_urls and do_interactive:
+        from rich.prompt import Confirm, Prompt
+
+        console.print(
+            "[info]No download URLs found. I can help you assign destination folders now.[/]"
+        )
+        prompt_urls = False
+        if not dry_run:
+            prompt_urls = Confirm.ask(
+                "Do you want to enter download URLs now?", default=False
+            )
+
+        enriched: dict[str, dict[str, str]] = {}
+        new_with_urls: list[tuple[ModelRef, Path, str | None, str]] = []
+        new_without_urls: list[tuple[ModelRef, Path, str | None, str]] = []
+
+        for ref, dest, folder, url in without_urls:
+            selected_folder = folder
+            subdir = ""
+            if not selected_folder:
+                selected_folder, subdir = _interactive_select_folder(
+                    ref.filename, models_root
+                )
+
+            entered_url = ""
+            if prompt_urls:
+                entered_url = Prompt.ask(
+                    f"URL for [accent]{ref.filename}[/] (blank to skip)", default=""
+                ).strip()
+
+            entry: dict[str, str] = {}
+            if selected_folder:
+                entry["folder"] = selected_folder
+            if subdir:
+                entry["subdir"] = subdir
+            if entered_url:
+                entry["url"] = entered_url
+            enriched[ref.filename] = entry
+
+            new_dest = (
+                models_root / selected_folder / subdir / ref.filename
+                if selected_folder
+                else dest
+            )
+            if entered_url:
+                new_with_urls.append((ref, new_dest, selected_folder, entered_url))
+            else:
+                new_without_urls.append((ref, new_dest, selected_folder, ""))
+
+        if enriched:
+            console.print(
+                "[dim]Mapping template (add URLs and re-run with --map):[/dim]"
+            )
+            console.print(
+                json.dumps({"models": enriched}, indent=2, sort_keys=True),
+            )
+
+        with_urls = new_with_urls
+        without_urls = new_without_urls
+
     # If there are no models to sync, exit early
     if not with_urls:
+        if dry_run:
+            console.print(
+                f"[warn]All {len(missing)} missing model(s) lack URL metadata. "
+                "Add them to --map (or re-run without --dry-run and use --interactive).[/]"
+            )
+            return
         console.print(
-            f"[error]All {len(missing)} missing model(s) lack URL metadata. "
+            f"[warn]No models can be downloaded without URLs. "
             "Add them to --map and re-run.[/]"
         )
-        raise typer.Exit(1)
+        return
 
     # If there are models without URLs, warn but continue with available ones
     if without_urls:
