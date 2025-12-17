@@ -2,6 +2,7 @@
 private/
 config.toml
 .coverage
+.cache/
 
 # Byte-compiled / cache
 __pycache__/
