@@ -67,7 +67,7 @@ def test_workflows_sync_dry_run_requires_mapping_for_missing_models(runner, tmp_
     # Dry-run without mapping should fail because URL is unknown.
     result = runner.invoke(app, ["workflows", "sync", str(wf_path), "--dry-run"])
     assert result.exit_code == 1
-    assert "have no URL mapping" in result.stdout
+    assert "lack URL metadata" in result.stdout
 
 
 def test_workflows_sync_dry_run_with_mapping_succeeds(runner, tmp_path):

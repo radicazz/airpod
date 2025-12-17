@@ -726,25 +726,45 @@ def sync_cmd(
         console.print("[ok]✓ No missing models detected[/]")
         return
 
-    console.print(f"[warn]Missing models: {len(missing)}[/]")
-    unresolved = [m for m in missing if not m[3]]
-    for ref, dest, folder, url in missing:
-        folder_disp = folder or "?"
-        console.print(
-            f"- [accent]{ref.filename}[/] → models/{folder_disp} "
-            f"[dim]({ref.source or 'workflow'})[/dim]"
-        )
-        if url:
-            console.print(f"  [dim]url: {url}[/dim]")
-        else:
-            console.print("  [dim]url: (missing)[/dim]")
+    # Separate models with URLs from those without
+    with_urls = [(ref, dest, folder, url) for ref, dest, folder, url in missing if url]
+    without_urls = [
+        (ref, dest, folder, url) for ref, dest, folder, url in missing if not url
+    ]
 
-    if unresolved:
+    console.print(f"[warn]Missing models: {len(missing)}[/]")
+
+    # Show models that can be synced
+    if with_urls:
+        console.print(f"[ok]Models with URLs (can sync): {len(with_urls)}[/]")
+        for ref, dest, folder, url in with_urls:
+            folder_disp = folder or "?"
+            console.print(
+                f"  [accent]{ref.filename}[/] → models/{folder_disp} "
+                f"[dim](from {ref.source or 'workflow'})[/dim]"
+            )
+
+    # Show models that need mapping
+    if without_urls:
+        console.print(f"[warn]Models without URLs (need --map): {len(without_urls)}[/]")
+        for ref, dest, folder, url in without_urls:
+            folder_disp = folder or "?"
+            console.print(f"  [dim]{ref.filename} → models/{folder_disp}[/]")
+
+    # If there are no models to sync, exit early
+    if not with_urls:
         console.print(
-            f"[error]{len(unresolved)} missing model(s) have no URL mapping. "
+            f"[error]All {len(missing)} missing model(s) lack URL metadata. "
             "Add them to --map and re-run.[/]"
         )
         raise typer.Exit(1)
+
+    # If there are models without URLs, warn but continue with available ones
+    if without_urls:
+        console.print(
+            f"[info]Will sync {len(with_urls)} model(s) with URLs. "
+            f"{len(without_urls)} model(s) will be skipped (add to --map to include).[/]"
+        )
 
     if dry_run:
         return
@@ -752,11 +772,11 @@ def sync_cmd(
     if not yes:
         from rich.prompt import Confirm
 
-        if not Confirm.ask(f"Download {len(missing)} model(s) now?"):
+        if not Confirm.ask(f"Download {len(with_urls)} model(s) now?"):
             raise typer.Exit(0)
 
     failures: list[tuple[str, str]] = []
-    for ref, dest, folder, url in missing:
+    for ref, dest, folder, url in with_urls:
         if not folder:
             console.print(f"[warn]Skipping {ref.filename}: unknown folder[/]")
             continue
@@ -778,7 +798,12 @@ def sync_cmd(
         console.print(f"[error]{len(failures)} download(s) failed[/]")
         raise typer.Exit(1)
 
-    console.print("[ok]✓ Sync complete[/]")
+    synced = len(with_urls) - len(failures)
+    if synced > 0:
+        console.print(f"[ok]✓ Synced {synced} model(s)[/]")
+
+    if without_urls:
+        console.print(f"[warn]{len(without_urls)} model(s) still need URLs to sync[/]")
 
 
 @workflows_app.command(name="pull", context_settings=COMMAND_CONTEXT)
