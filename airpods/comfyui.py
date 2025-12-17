@@ -103,6 +103,7 @@ def get_comfyui_volumes(provider: ComfyProvider) -> Dict[str, Tuple[str, str]]:
         Dictionary mapping volume names to (source_suffix, target_path) tuples
     """
     if provider == "mmartial":
+        # mmartial uses /basedir/models/ for model storage
         return {
             "basedir": ("comfyui/basedir", "/basedir"),
             "run": ("comfyui/run", "/comfy/mnt"),
