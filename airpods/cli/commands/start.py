@@ -44,6 +44,134 @@ from ..status_view import check_service_health, collect_host_ports
 from ..type_defs import CommandMap
 
 
+def _webui_db_ready(container_name: str) -> bool:
+    """Return True if the Open WebUI SQLite DB exists and has a function table."""
+    code = r"""
+import os
+import sqlite3
+import sys
+
+DB_PATH = r"/app/backend/data/webui.db"
+if not os.path.exists(DB_PATH):
+    sys.exit(2)
+
+try:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='function'"
+    )
+    ok = cur.fetchone() is not None
+    conn.close()
+    sys.exit(0 if ok else 3)
+except Exception:
+    sys.exit(4)
+"""
+    try:
+        result = subprocess.run(
+            ["podman", "exec", container_name, "python3", "-c", code.strip()],
+            capture_output=True,
+            text=True,
+            timeout=6,
+            check=False,
+        )
+    except Exception:
+        return False
+    return result.returncode == 0
+
+
+def _maybe_sync_plugins(
+    specs: list[ServiceSpec],
+    *,
+    verbose: bool,
+) -> tuple[int, int]:
+    """Sync Open WebUI + ComfyUI plugins for requested services.
+
+    Returns: (synced_webui, synced_comfyui)
+    """
+    from airpods import plugins
+
+    synced_webui = 0
+    synced_comfyui = 0
+
+    if any(s.name == "open-webui" for s in specs):
+        with status_spinner("Syncing Open WebUI plugins"):
+            synced_webui = plugins.sync_plugins()
+        if synced_webui > 0:
+            console.print(f"[ok]Synced {synced_webui} plugin(s)[/]")
+        elif verbose:
+            console.print("[info]Plugins already up-to-date[/]")
+
+    if any(s.name == "comfyui" for s in specs):
+        with status_spinner("Syncing ComfyUI custom nodes"):
+            synced_comfyui = plugins.sync_comfyui_plugins()
+        if synced_comfyui > 0:
+            console.print(f"[ok]Synced {synced_comfyui} custom node(s)[/]")
+        elif verbose:
+            console.print("[info]Custom nodes already up-to-date[/]")
+
+    return synced_webui, synced_comfyui
+
+
+def _maybe_import_webui_plugins(
+    specs: list[ServiceSpec],
+    *,
+    cli_config: "CLIConfig",
+    verbose: bool,
+) -> None:
+    """Best-effort import of synced plugins into the Open WebUI DB.
+
+    This runs even when services are already running and even when --wait is not used,
+    so plugin updates land in Admin > Functions without requiring a container restart.
+    """
+    from airpods import plugins
+
+    webui_specs = [s for s in specs if s.name == "open-webui"]
+    if not webui_specs:
+        return
+
+    container_name = webui_specs[0].container
+    plugins_dir = plugins.get_plugins_target_dir()
+
+    # The DB may not be ready immediately after container start; retry briefly.
+    timeout_seconds = min(cli_config.startup_timeout, 45)
+    start_at = time.time()
+    while time.time() - start_at < timeout_seconds:
+        if _webui_db_ready(container_name):
+            break
+        time.sleep(max(0.5, float(cli_config.startup_check_interval)))
+
+    if not _webui_db_ready(container_name):
+        if verbose:
+            console.print(
+                "[warn]Open WebUI DB not ready; skipping plugin auto-import. "
+                "Plugins are synced to filesystem and can be imported later.[/]"
+            )
+        return
+
+    with status_spinner("Auto-importing plugins into Open WebUI"):
+        try:
+            owner_id = plugins.resolve_plugin_owner_user_id(
+                container_name, cli_config.plugin_owner
+            )
+            imported = plugins.import_plugins_to_webui(
+                plugins_dir,
+                admin_user_id=owner_id,
+                container_name=container_name,
+            )
+            if imported > 0:
+                console.print(
+                    f"[ok]✓ Auto-imported {imported} plugin(s) into Open WebUI[/]"
+                )
+            elif verbose:
+                console.print("[info]No new plugins to import (may already exist)[/]")
+        except Exception as e:
+            console.print(
+                f"[warn]Plugin auto-import failed: {e}. "
+                "Plugins are synced to filesystem and can be imported manually via UI.[/]"
+            )
+
+
 def register(app: typer.Typer) -> CommandMap:
     @app.command(context_settings=COMMAND_CONTEXT)
     def start(
@@ -155,8 +283,19 @@ def register(app: typer.Typer) -> CommandMap:
             else:
                 needs_start.append(spec)
 
-        # If everything is already running, just report and exit
+        # Sync plugins even if services are already running.
+        from airpods import plugins  # noqa: F401
+
+        synced_webui, synced_comfyui = _maybe_sync_plugins(specs, verbose=verbose)
+
+        # If everything is already running, still auto-import Open WebUI plugins and exit.
         if not needs_start:
+            _maybe_import_webui_plugins(specs, cli_config=cli_config, verbose=verbose)
+            if synced_comfyui > 0:
+                console.print(
+                    "[warn]ComfyUI is already running; restart is required to load updated custom nodes.[/]"
+                )
+
             console.print("[ok]All services already running[/]")
             from airpods.cli.status_view import render_status
 
@@ -203,29 +342,7 @@ def register(app: typer.Typer) -> CommandMap:
             volume_results = manager.ensure_volumes(specs_to_start)
         print_volume_status(volume_results, verbose=verbose)
 
-        # Sync Open WebUI plugins if webui is being started
-        from airpods import plugins
-
-        webui_specs = [s for s in specs_to_start if s.name == "open-webui"]
-        if webui_specs:
-            with status_spinner("Syncing Open WebUI plugins"):
-                synced = plugins.sync_plugins()
-            # Only show plugin sync messages if changes were made
-            if synced > 0:
-                console.print(f"[ok]Synced {synced} plugin(s)[/]")
-            elif verbose:
-                console.print("[info]Plugins already up-to-date[/]")
-
-        # Sync ComfyUI custom nodes if comfyui is being started
-        comfyui_specs = [s for s in specs_to_start if s.name == "comfyui"]
-        if comfyui_specs:
-            with status_spinner("Syncing ComfyUI custom nodes"):
-                synced = plugins.sync_comfyui_plugins()
-            # Only show custom node sync messages if changes were made
-            if synced > 0:
-                console.print(f"[ok]Synced {synced} custom node(s)[/]")
-            elif verbose:
-                console.print("[info]Custom nodes already up-to-date[/]")
+        # Plugins were already synced above for all requested services.
 
         # Simple log-based startup process
         service_urls: dict[str, str] = {}
@@ -264,6 +381,9 @@ def register(app: typer.Typer) -> CommandMap:
 
         # If we're not waiting for readiness, return after pods are launched.
         if not wait:
+            # Even without --wait, attempt to auto-import Open WebUI plugins once DB exists.
+            _maybe_import_webui_plugins(specs, cli_config=cli_config, verbose=verbose)
+
             started = [
                 spec.name for spec in specs_to_start if spec.name not in failed_services
             ]
@@ -457,36 +577,8 @@ def register(app: typer.Typer) -> CommandMap:
                     console.print(f"[warn]Auto-pull failed: {e}[/]")
 
         # Auto-import plugins into Open WebUI if service is healthy
-        if (
-            webui_specs
-            and "open-webui" in service_urls
-            and "open-webui" not in failed_services
-        ):
-            with status_spinner("Auto-importing plugins into Open WebUI"):
-                try:
-                    plugins_dir = plugins.get_plugins_target_dir()
-                    container_name = webui_specs[0].container
-                    owner_id = plugins.resolve_plugin_owner_user_id(
-                        container_name, cli_config.plugin_owner
-                    )
-                    imported = plugins.import_plugins_to_webui(
-                        plugins_dir,
-                        admin_user_id=owner_id,
-                        container_name=container_name,
-                    )
-                    if imported > 0:
-                        console.print(
-                            f"[ok]✓ Auto-imported {imported} plugin(s) into Open WebUI[/]"
-                        )
-                    elif verbose:
-                        console.print(
-                            "[info]No new plugins to import (may already exist)[/]"
-                        )
-                except Exception as e:
-                    console.print(
-                        f"[warn]Plugin auto-import failed: {e}. "
-                        "Plugins are synced to filesystem and can be imported manually via UI.[/]"
-                    )
+        if "open-webui" in service_urls and "open-webui" not in failed_services:
+            _maybe_import_webui_plugins(specs, cli_config=cli_config, verbose=verbose)
 
     return {"start": start}
 

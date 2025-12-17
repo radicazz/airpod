@@ -2,7 +2,18 @@ from __future__ import annotations
 
 import typer
 
-from . import backup, clean, config, doctor, logs, models, start, status, stop
+from . import (
+    backup,
+    clean,
+    config,
+    doctor,
+    logs,
+    models,
+    start,
+    status,
+    stop,
+    workflows,
+)
 from ..common import ALIAS_HELP_TEMPLATE, COMMAND_ALIASES, COMMAND_CONTEXT
 from ..type_defs import CommandMap
 
@@ -13,6 +24,7 @@ COMMAND_MODULES = [
     status,
     logs,
     models,
+    workflows,
     config,
     clean,
     backup,

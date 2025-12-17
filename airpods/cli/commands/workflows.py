@@ -1,0 +1,770 @@
+"""Workflows command implementation for ComfyUI workflow + model utilities."""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+
+import typer
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TransferSpeedColumn,
+)
+
+from airpods import config as config_module
+from airpods.logging import console
+
+from ..common import COMMAND_CONTEXT
+from ..help import command_help_option, maybe_show_command_help, show_command_help
+from ..type_defs import CommandMap
+
+workflows_app = typer.Typer(
+    help="ComfyUI workflows and model sync helpers", context_settings=COMMAND_CONTEXT
+)
+
+
+@workflows_app.callback(invoke_without_command=True)
+def _workflows_root(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+) -> None:
+    maybe_show_command_help(ctx, help_)
+    if ctx.invoked_subcommand is None:
+        show_command_help(ctx)
+
+
+_MODEL_EXTS = (
+    ".safetensors",
+    ".ckpt",
+    ".pt",
+    ".pth",
+    ".bin",
+    ".onnx",
+    ".gguf",
+)
+
+
+_INPUT_KEY_TO_FOLDER = {
+    "ckpt_name": "checkpoints",
+    "checkpoint": "checkpoints",
+    "checkpoint_name": "checkpoints",
+    "lora_name": "loras",
+    "lora": "loras",
+    "vae_name": "vae",
+    "vae": "vae",
+    "clip_name": "clip",
+    "clip": "clip",
+    "clip_vision": "clip_vision",
+    "control_net_name": "controlnet",
+    "controlnet_name": "controlnet",
+    "controlnet": "controlnet",
+    "unet_name": "unet",
+    "unet": "unet",
+    "upscale_model": "upscale_models",
+    "upscale_model_name": "upscale_models",
+    "upscaler_name": "upscale_models",
+    "embedding": "embeddings",
+    "embedding_name": "embeddings",
+}
+
+
+@dataclass(frozen=True)
+class ModelRef:
+    filename: str
+    folder: str | None = None
+    subdir: str | None = None
+    url: str | None = None
+    source: str | None = None
+
+
+class DownloadError(RuntimeError):
+    pass
+
+
+def _coerce_filename(value: str) -> str | None:
+    if not isinstance(value, str):
+        return None
+    name = Path(value).name.strip()
+    if not name:
+        return None
+    if name in {".", ".."}:
+        return None
+    if any(name.lower().endswith(ext) for ext in _MODEL_EXTS):
+        return name
+    return None
+
+
+def _flatten_strings(obj: Any) -> list[str]:
+    found: list[str] = []
+    if isinstance(obj, str):
+        found.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            found.extend(_flatten_strings(v))
+    elif isinstance(obj, list):
+        for v in obj:
+            found.extend(_flatten_strings(v))
+    return found
+
+
+def _extract_model_refs_prompt_format(data: dict) -> list[ModelRef]:
+    refs: list[ModelRef] = []
+    for node_id, node in data.items():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for key, value in inputs.items():
+            if not isinstance(value, str):
+                continue
+            filename = _coerce_filename(value)
+            if not filename:
+                continue
+            folder = _INPUT_KEY_TO_FOLDER.get(str(key).lower())
+            refs.append(
+                ModelRef(
+                    filename=filename,
+                    folder=folder,
+                    subdir=None,
+                    source=f"prompt:{node_id}:{key}",
+                )
+            )
+    return refs
+
+
+def _extract_model_refs_workflow_format(data: dict) -> list[ModelRef]:
+    # UI workflow format is not stable across ComfyUI versions. Best-effort:
+    # - Prefer per-node metadata if present (models list with directory + url).
+    # - Otherwise, map widget values to known model folders when possible.
+    # - Finally, scan for strings that look like model filenames anywhere in the document.
+    refs: list[ModelRef] = []
+    nodes = data.get("nodes")
+    if isinstance(nodes, list):
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_id = node.get("id")
+            props = node.get("properties")
+            models = props.get("models") if isinstance(props, dict) else None
+            if not isinstance(models, list):
+                continue
+            for model in models:
+                if not isinstance(model, dict):
+                    continue
+                filename = _coerce_filename(str(model.get("name", "")))
+                if not filename:
+                    continue
+                directory = model.get("directory")
+                folder = directory.strip() if isinstance(directory, str) else None
+                url = model.get("url")
+                url_str = url.strip() if isinstance(url, str) and url.strip() else None
+                refs.append(
+                    ModelRef(
+                        filename=filename,
+                        folder=folder,
+                        subdir=None,
+                        url=url_str,
+                        source=f"workflow:{node_id}:properties.models",
+                    )
+                )
+
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_id = node.get("id")
+            inputs = node.get("inputs")
+            widgets_values = node.get("widgets_values")
+            if not isinstance(inputs, list) or not isinstance(widgets_values, list):
+                continue
+            widget_names: list[str] = []
+            for inp in inputs:
+                if not isinstance(inp, dict):
+                    continue
+                name = inp.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                if not isinstance(inp.get("widget"), dict):
+                    continue
+                widget_names.append(name.strip())
+
+            for input_name, value in zip(widget_names, widgets_values):
+                if not isinstance(value, str):
+                    continue
+                filename = _coerce_filename(value)
+                if not filename:
+                    continue
+                folder = _INPUT_KEY_TO_FOLDER.get(input_name.lower())
+                if not folder:
+                    continue
+                refs.append(
+                    ModelRef(
+                        filename=filename,
+                        folder=folder,
+                        subdir=None,
+                        url=None,
+                        source=f"workflow:{node_id}:widgets",
+                    )
+                )
+
+    for s in _flatten_strings(data):
+        filename = _coerce_filename(s)
+        if filename:
+            refs.append(
+                ModelRef(
+                    filename=filename,
+                    folder=None,
+                    subdir=None,
+                    url=None,
+                    source="workflow",
+                )
+            )
+    return refs
+
+
+def extract_model_refs(workflow: dict) -> list[ModelRef]:
+    # Prompt-format: mapping of node-id -> {class_type, inputs}
+    if all(isinstance(k, str) for k in workflow.keys()) and any(
+        isinstance(v, dict) and "inputs" in v for v in workflow.values()
+    ):
+        return _extract_model_refs_prompt_format(workflow)
+
+    # Workflow-format: {"nodes":[...], ...}
+    if isinstance(workflow.get("nodes"), list):
+        return _extract_model_refs_workflow_format(workflow)
+
+    return _extract_model_refs_workflow_format(workflow)
+
+
+def _dedupe_refs(refs: list[ModelRef]) -> list[ModelRef]:
+    grouped: dict[str, list[ModelRef]] = {}
+    for ref in refs:
+        grouped.setdefault(ref.filename, []).append(ref)
+
+    out: list[ModelRef] = []
+    for filename, items in grouped.items():
+        # If we have at least one reference that knows the folder, drop
+        # folder-less "best-effort" scans for the same filename.
+        if any(i.folder for i in items):
+            items = [i for i in items if i.folder]
+
+        by_key: dict[tuple[str, str | None, str | None], ModelRef] = {}
+        for ref in items:
+            key = (filename, ref.folder, ref.subdir)
+            existing = by_key.get(key)
+            if existing is None:
+                by_key[key] = ref
+                continue
+            # Prefer entries that carry a URL (so sync can proceed without a mapping file).
+            if not existing.url and ref.url:
+                by_key[key] = ref
+        out.extend(by_key.values())
+
+    return out
+
+
+def _comfyui_host_port() -> int:
+    spec = config_module.REGISTRY.get("comfyui")
+    if spec and spec.ports:
+        return spec.ports[0][0]
+    return 8188
+
+
+def _find_comfyui_mount(target_suffix: str) -> Path | None:
+    spec = config_module.REGISTRY.get("comfyui")
+    if not spec:
+        return None
+    for vol in spec.volumes:
+        if vol.target == target_suffix or vol.target.endswith(target_suffix):
+            src = Path(vol.source)
+            if src.is_absolute():
+                return src
+    return None
+
+
+def comfyui_workspace_dir() -> Path:
+    path = _find_comfyui_mount("/workspace")
+    if path:
+        return path
+    # Fallback to expected yanwk mount.
+    from airpods import state
+
+    return state.resolve_volume_path("comfyui/workspace")
+
+
+def comfyui_workflows_dir() -> Path:
+    """Return the directory where ComfyUI saves user workflow JSON files.
+
+    Depending on the image/provider layout, workflows may live under a "basedir"
+    volume (mmartial) or under the ComfyUI folder within the "workspace" volume
+    (yanwk). Falls back to the workspace root for backwards compatibility.
+    """
+
+    from airpods import state
+
+    basedir_root = _find_comfyui_mount("/basedir") or state.resolve_volume_path(
+        "comfyui/basedir"
+    )
+    basedir_candidate = basedir_root / "user" / "default" / "workflows"
+    if basedir_candidate.exists():
+        return basedir_candidate
+
+    workspace_root = comfyui_workspace_dir()
+    workspace_candidate = workspace_root / "ComfyUI" / "user" / "default" / "workflows"
+    if workspace_candidate.exists():
+        return workspace_candidate
+
+    # Some installs may place user data directly under the workspace root.
+    alt_candidate = workspace_root / "user" / "default" / "workflows"
+    if alt_candidate.exists():
+        return alt_candidate
+
+    return workspace_root
+
+
+def comfyui_models_dir() -> Path:
+    """Return the host-side directory where ComfyUI models are stored.
+
+    Provider-specific paths:
+    - yanwk: /root/ComfyUI/models in container
+    - mmartial: /basedir/models in container
+    """
+    spec = config_module.REGISTRY.get("comfyui")
+    if not spec:
+        raise typer.BadParameter("comfyui service is not enabled in config")
+
+    # Detect provider by checking which volume mounts are present
+    mount_targets = {vol.target for vol in spec.volumes}
+    is_mmartial = "/basedir" in mount_targets
+
+    if is_mmartial:
+        # mmartial: models are at /basedir/models inside the container
+        for vol in spec.volumes:
+            if vol.target == "/basedir":
+                src = Path(vol.source)
+                if not src.is_absolute():
+                    from airpods import state
+
+                    if vol.source.startswith("bind://"):
+                        relative = vol.source[7:]  # strip "bind://"
+                        src = state.resolve_volume_path(relative)
+                    else:
+                        src = state.resolve_volume_path(vol.source)
+
+                models_dir = src / "models"
+                models_dir.mkdir(parents=True, exist_ok=True)
+                return models_dir
+    else:
+        # yanwk: models are at /root/ComfyUI/models inside the container
+        for vol in spec.volumes:
+            if "ComfyUI/models" in vol.target or vol.target.endswith("/models"):
+                src = Path(vol.source)
+                if not src.is_absolute():
+                    from airpods import state
+
+                    if vol.source.startswith("bind://"):
+                        relative = vol.source[7:]  # strip "bind://"
+                        src = state.resolve_volume_path(relative)
+                    else:
+                        src = state.resolve_volume_path(vol.source)
+
+                src.mkdir(parents=True, exist_ok=True)
+                return src
+
+    raise typer.BadParameter(
+        "unable to locate ComfyUI models volume on host; ensure comfyui volumes include a models mount"
+    )
+
+
+def _load_mapping(path: Path) -> dict[str, dict[str, str]]:
+    if not path.exists():
+        raise typer.BadParameter(f"mapping file not found: {path}")
+    if path.suffix.lower() == ".json":
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    else:
+        import tomlkit
+
+        raw = tomlkit.parse(path.read_text(encoding="utf-8"))
+
+    models = raw.get("models") if isinstance(raw, dict) else None
+    if not isinstance(models, dict):
+        return {}
+
+    out: dict[str, dict[str, str]] = {}
+    for name, value in models.items():
+        filename = Path(str(name)).name
+        if isinstance(value, str):
+            out[filename] = {"url": value}
+        elif isinstance(value, dict):
+            item: dict[str, str] = {}
+            for k in ("url", "folder", "subdir", "filename"):
+                v = value.get(k)
+                if isinstance(v, str) and v.strip():
+                    item[k] = v.strip()
+            if "url" in item:
+                out[filename] = item
+    return out
+
+
+def _normalize_hf_url(url: str) -> str:
+    return re.sub(r"(/)blob(/)", r"\1resolve\2", url)
+
+
+def _download_to_path(
+    url: str,
+    dest: Path,
+    *,
+    hf_token: str | None = None,
+    overwrite: bool = False,
+    timeout_s: int = 300,
+    retries: int = 2,
+) -> None:
+    if dest.exists() and not overwrite:
+        return
+    if timeout_s <= 0:
+        raise typer.BadParameter("--timeout must be > 0")
+    if retries < 0:
+        raise typer.BadParameter("--retries must be >= 0")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    url = _normalize_hf_url(url)
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise typer.BadParameter("only http(s) urls are supported")
+
+    headers = {"User-Agent": "airpods-workflows/0.1"}
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
+
+    req = Request(url, headers=headers, method="GET")
+    tmp = dest.with_suffix(dest.suffix + ".part")
+
+    last_err: str | None = None
+    attempts_total = retries + 1
+    for attempt in range(1, attempts_total + 1):
+        try:
+            with urlopen(req, timeout=float(timeout_s)) as resp:
+                total = resp.headers.get("Content-Length")
+                total_int = int(total) if total and total.isdigit() else None
+
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    DownloadColumn(),
+                    TransferSpeedColumn(),
+                    TimeElapsedColumn(),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task(
+                        f"Downloading {dest.name}", total=total_int or 0
+                    )
+                    with tmp.open("wb") as f:
+                        while True:
+                            chunk = resp.read(1024 * 256)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            progress.update(task, advance=len(chunk))
+                    progress.update(
+                        task, completed=total_int or progress.tasks[0].completed
+                    )
+
+            tmp.replace(dest)
+            return
+        except HTTPError as exc:
+            last_err = f"http {exc.code}: {exc.reason}"
+        except URLError as exc:
+            last_err = str(getattr(exc, "reason", exc)) or str(exc)
+        except TimeoutError as exc:
+            last_err = str(exc) or "timed out"
+        except OSError as exc:
+            last_err = str(exc) or "os error"
+        finally:
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except OSError:
+                pass
+
+        if attempt < attempts_total:
+            console.print(
+                f"[warn]Download failed (attempt {attempt}/{attempts_total}): {last_err}[/]"
+            )
+            time.sleep(min(15.0, attempt * 1.5))
+
+    raise DownloadError(last_err or "download failed")
+
+
+@workflows_app.command(name="path", context_settings=COMMAND_CONTEXT)
+def path_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+) -> None:
+    """Show host paths for ComfyUI workspace and models volumes."""
+    maybe_show_command_help(ctx, help_)
+    console.print(f"Workspace:  [accent]{comfyui_workspace_dir()}[/]")
+    console.print(f"Workflows:  [accent]{comfyui_workflows_dir()}[/]")
+    try:
+        console.print(f"Models:     [accent]{comfyui_models_dir()}[/]")
+    except typer.BadParameter as exc:
+        console.print(f"[warn]{exc}[/]")
+
+
+@workflows_app.command(name="list", context_settings=COMMAND_CONTEXT)
+def list_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+    limit: int = typer.Option(50, "--limit", help="Maximum workflows to show."),
+) -> None:
+    """List saved workflow JSON files."""
+    maybe_show_command_help(ctx, help_)
+    root = comfyui_workflows_dir()
+    if not root.exists():
+        console.print(f"[warn]Workflows directory not found: {root}[/]")
+        raise typer.Exit(1)
+
+    workflows: list[Path] = sorted(root.rglob("*.json"))
+    if not workflows:
+        console.print(f"[info]No workflow JSON files found in: {root}[/]")
+        return
+
+    shown = workflows[: max(1, limit)]
+    for path in shown:
+        rel = path.relative_to(root)
+        console.print(f"- [accent]{rel}[/]")
+    if len(workflows) > len(shown):
+        console.print(f"[dim]…and {len(workflows) - len(shown)} more[/dim]")
+
+
+@workflows_app.command(name="api", context_settings=COMMAND_CONTEXT)
+def api_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+) -> None:
+    """Show ComfyUI API endpoints and URLs."""
+    maybe_show_command_help(ctx, help_)
+    port = _comfyui_host_port()
+    base = f"http://localhost:{port}"
+    console.print(f"UI:  [accent]{base}[/]")
+    console.print(f"API: [accent]{base}[/]")
+    console.print("[dim]Common endpoints:[/dim]")
+    console.print(f"  [dim]• POST {base}/prompt[/dim]")
+    console.print(f"  [dim]• GET  {base}/queue[/dim]")
+    console.print(f"  [dim]• GET  {base}/history[/dim]")
+    console.print(f"  [dim]• GET  {base}/system_stats[/dim]")
+
+
+def _resolve_workflow_path(workflow: str) -> Path:
+    p = Path(workflow)
+    if p.exists():
+        return p
+
+    # Allow passing a path relative to the workflows dir or workspace, or a basename.
+    workflows_root = comfyui_workflows_dir()
+    workspace_root = comfyui_workspace_dir()
+    for base in (workflows_root, workspace_root):
+        candidate = base / workflow
+        if candidate.exists():
+            return candidate
+        if not workflow.lower().endswith(".json"):
+            candidate2 = base / f"{workflow}.json"
+            if candidate2.exists():
+                return candidate2
+    raise typer.BadParameter(f"workflow not found: {workflow}")
+
+
+@workflows_app.command(name="sync", context_settings=COMMAND_CONTEXT)
+def sync_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+    workflow: str = typer.Argument(
+        ..., help="Workflow JSON file (path or workspace-relative)."
+    ),
+    mapping: Optional[Path] = typer.Option(
+        None,
+        "--map",
+        help="TOML/JSON mapping of filenames to HuggingFace URLs (and optional folder/subdir).",
+    ),
+    hf_token: Optional[str] = typer.Option(
+        None,
+        "--hf-token",
+        envvar="HF_TOKEN",
+        help="HuggingFace token (optional; needed for gated models).",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Download without prompting."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be downloaded without downloading."
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Overwrite existing files if present."
+    ),
+    timeout_s: int = typer.Option(
+        300, "--timeout", help="Network read timeout in seconds for downloads."
+    ),
+    retries: int = typer.Option(2, "--retries", help="Retry count for downloads."),
+) -> None:
+    """Install missing models for a workflow.
+
+    Uses an optional local URL mapping file, and also supports workflow-embedded
+    model metadata (directory + download URL) when present.
+    """
+    maybe_show_command_help(ctx, help_)
+
+    workflow_path = _resolve_workflow_path(workflow)
+    data = json.loads(workflow_path.read_text(encoding="utf-8"))
+    refs = _dedupe_refs(extract_model_refs(data))
+    if not refs:
+        console.print("[info]No model-like references found in workflow[/]")
+        return
+
+    models_root = comfyui_models_dir()
+    mapping_dict = _load_mapping(mapping) if mapping else {}
+
+    missing: list[tuple[ModelRef, Path, str | None, str]] = []
+    for ref in refs:
+        entry = mapping_dict.get(ref.filename)
+        folder = (entry or {}).get("folder") or ref.folder
+        subdir = (entry or {}).get("subdir") or ref.subdir or ""
+        filename = (entry or {}).get("filename") or ref.filename
+        url = (entry or {}).get("url") or ref.url or ""
+
+        if folder:
+            candidate = models_root / folder / subdir / filename
+            if candidate.exists():
+                continue
+            missing.append((ref, candidate, folder, url))
+        else:
+            # Unknown folder: treat as missing if not found anywhere under models_root.
+            found = next(models_root.rglob(ref.filename), None)
+            if found is None:
+                missing.append((ref, models_root / ref.filename, None, url))
+
+    if not missing:
+        console.print("[ok]✓ No missing models detected[/]")
+        return
+
+    console.print(f"[warn]Missing models: {len(missing)}[/]")
+    unresolved = [m for m in missing if not m[3]]
+    for ref, dest, folder, url in missing:
+        folder_disp = folder or "?"
+        console.print(
+            f"- [accent]{ref.filename}[/] → models/{folder_disp} "
+            f"[dim]({ref.source or 'workflow'})[/dim]"
+        )
+        if url:
+            console.print(f"  [dim]url: {url}[/dim]")
+        else:
+            console.print("  [dim]url: (missing)[/dim]")
+
+    if unresolved:
+        console.print(
+            f"[error]{len(unresolved)} missing model(s) have no URL mapping. "
+            "Add them to --map and re-run.[/]"
+        )
+        raise typer.Exit(1)
+
+    if dry_run:
+        return
+
+    if not yes:
+        from rich.prompt import Confirm
+
+        if not Confirm.ask(f"Download {len(missing)} model(s) now?"):
+            raise typer.Exit(0)
+
+    failures: list[tuple[str, str]] = []
+    for ref, dest, folder, url in missing:
+        if not folder:
+            console.print(f"[warn]Skipping {ref.filename}: unknown folder[/]")
+            continue
+        console.print(f"[info]→ {ref.filename}[/]")
+        try:
+            _download_to_path(
+                url,
+                dest,
+                hf_token=hf_token,
+                overwrite=overwrite,
+                timeout_s=timeout_s,
+                retries=retries,
+            )
+        except DownloadError as exc:
+            failures.append((ref.filename, str(exc)))
+            console.print(f"[error]✗ {ref.filename}: {exc}[/]")
+
+    if failures:
+        console.print(f"[error]{len(failures)} download(s) failed[/]")
+        raise typer.Exit(1)
+
+    console.print("[ok]✓ Sync complete[/]")
+
+
+@workflows_app.command(name="pull", context_settings=COMMAND_CONTEXT)
+def pull_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+    url: str = typer.Argument(..., help="Direct model file URL (HF recommended)."),
+    folder: str = typer.Option(
+        ...,
+        "--folder",
+        "-f",
+        help="ComfyUI models subfolder (e.g. checkpoints, loras).",
+    ),
+    filename: Optional[str] = typer.Option(
+        None, "--name", "-n", help="Filename to save as (defaults to URL basename)."
+    ),
+    subdir: str = typer.Option(
+        "", "--subdir", help="Optional subdirectory under folder."
+    ),
+    hf_token: Optional[str] = typer.Option(
+        None,
+        "--hf-token",
+        envvar="HF_TOKEN",
+        help="HuggingFace token (optional; needed for gated models).",
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite if exists."),
+    timeout_s: int = typer.Option(
+        300, "--timeout", help="Network read timeout in seconds for downloads."
+    ),
+    retries: int = typer.Option(2, "--retries", help="Retry count for downloads."),
+) -> None:
+    """Download a single model file into the ComfyUI models directory."""
+    maybe_show_command_help(ctx, help_)
+    models_root = comfyui_models_dir()
+    name = filename or Path(urlparse(url).path).name
+    if not name:
+        raise typer.BadParameter("unable to infer filename from URL; pass --name")
+    dest = models_root / folder / subdir / Path(name).name
+    console.print(f"[info]Saving to: [accent]{dest}[/]")
+    try:
+        _download_to_path(
+            url,
+            dest,
+            hf_token=hf_token,
+            overwrite=overwrite,
+            timeout_s=timeout_s,
+            retries=retries,
+        )
+    except DownloadError as exc:
+        console.print(f"[error]✗ Download failed: {exc}[/]")
+        raise typer.Exit(1)
+    console.print("[ok]✓ Download complete[/]")
+
+
+def register(app: typer.Typer) -> CommandMap:
+    app.add_typer(workflows_app, name="workflows")
+    return {}

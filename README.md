@@ -1,12 +1,12 @@
 # airpods
 
-[![Tests](https://github.com/radicazz/airpods/actions/workflows/test.yml/badge.svg)](https://github.com/radicazz/airpods/actions/workflows/test.yml) [![Coverage](https://codecov.io/gh/radicazz/airpods/graph/badge.svg)](https://codecov.io/gh/radicazz/airpods)
+[![Version](https://img.shields.io/github/v/release/radicazz/airpods?color=blue)](https://github.com/radicazz/airpods/releases) [![Tests](https://github.com/radicazz/airpods/actions/workflows/test.yml/badge.svg)](https://github.com/radicazz/airpods/actions/workflows/test.yml) [![Coverage](https://codecov.io/gh/radicazz/airpods/graph/badge.svg)](https://codecov.io/gh/radicazz/airpods)
 
-Run the best free & open-source AI tools from the command-line with ease. This project currently supports the following services:
+Effortlessly orchestrate *free & open-source* AI services from the command-line:
 
-- [Ollama](https://github.com/ollama/ollama)
-- [Open WebUI](https://github.com/open-webui/open-webui)
-- [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+- [Ollama](https://github.com/ollama/ollama) - Language & Vision models for text, coding, tolling and more.
+- [Open WebUI](https://github.com/open-webui/open-webui)  -  Feature-packed front-end chat with multi-model support.
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI) - Mature node-based UI for image generation workflows.
 
 ## Get Started
 
@@ -20,6 +20,7 @@ Run the best free & open-source AI tools from the command-line with ease. This p
 Install `airpods` with `uv`:
 
 ```bash
+# This is the nighly installation.
 uv tool install "git+https://github.com/radicazz/airpods.git@main"
 ```
 
