@@ -656,6 +656,36 @@ def _resolve_workflow_path(workflow: str) -> Path:
     raise typer.BadParameter(f"workflow not found: {workflow}")
 
 
+def _resolve_workflow_path_restricted(workflow: str) -> Path:
+    """Resolve a workflow path, restricting deletion to ComfyUI volumes."""
+    workflows_root = comfyui_workflows_dir().resolve()
+    workspace_root = comfyui_workspace_dir().resolve()
+
+    p = Path(workflow)
+    if p.exists():
+        resolved = p.resolve()
+        allowed = resolved.is_relative_to(workflows_root) or resolved.is_relative_to(
+            workspace_root
+        )
+        if not allowed:
+            raise typer.BadParameter(
+                "workflow is outside ComfyUI workspace/workflows directories; "
+                "pass a workspace-relative name or move the file into the workflows volume"
+            )
+        return resolved
+
+    for base in (workflows_root, workspace_root):
+        candidate = (base / workflow).resolve()
+        if candidate.exists():
+            return candidate
+        if not workflow.lower().endswith(".json"):
+            candidate2 = (base / f"{workflow}.json").resolve()
+            if candidate2.exists():
+                return candidate2
+
+    raise typer.BadParameter(f"workflow not found: {workflow}")
+
+
 @workflows_app.command(name="sync", context_settings=COMMAND_CONTEXT)
 def sync_cmd(
     ctx: typer.Context,
@@ -804,6 +834,46 @@ def sync_cmd(
 
     if without_urls:
         console.print(f"[warn]{len(without_urls)} model(s) still need URLs to sync[/]")
+
+
+@workflows_app.command(name="remove", context_settings=COMMAND_CONTEXT)
+def remove_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+    workflow: str = typer.Argument(
+        ..., help="Workflow JSON file (path or workspace-relative)."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Delete without prompting."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be deleted without deleting."
+    ),
+) -> None:
+    """Remove a saved workflow JSON file."""
+    maybe_show_command_help(ctx, help_)
+    workflow_path = _resolve_workflow_path_restricted(workflow)
+    if workflow_path.suffix.lower() != ".json":
+        raise typer.BadParameter("workflow must be a .json file")
+    if not workflow_path.is_file():
+        raise typer.BadParameter(f"workflow is not a file: {workflow_path}")
+
+    display_root = comfyui_workflows_dir()
+    try:
+        display = str(workflow_path.relative_to(display_root))
+    except ValueError:
+        display = str(workflow_path)
+
+    if dry_run:
+        console.print(f"[info]Would remove: [accent]{display}[/]")
+        return
+
+    if not yes:
+        from rich.prompt import Confirm
+
+        if not Confirm.ask(f"Remove workflow [accent]{display}[/]?"):
+            raise typer.Exit(0)
+
+    workflow_path.unlink()
+    console.print(f"[ok]✓ Removed: {display}[/]")
 
 
 @workflows_app.command(name="pull", context_settings=COMMAND_CONTEXT)

@@ -519,6 +519,70 @@ def test_list_cmd_with_limit(runner, tmp_path, monkeypatch):
     assert "…and" in result.stdout
 
 
+def test_remove_cmd_deletes_workflow(runner, tmp_path, monkeypatch):
+    workflows_dir = tmp_path / "workflows"
+    workflows_dir.mkdir()
+    workspace_dir = tmp_path / "workspace"
+    workspace_dir.mkdir()
+
+    wf_path = workflows_dir / "to-delete.json"
+    wf_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        workflows_module, "comfyui_workflows_dir", lambda: workflows_dir
+    )
+    monkeypatch.setattr(
+        workflows_module, "comfyui_workspace_dir", lambda: workspace_dir
+    )
+
+    result = runner.invoke(app, ["workflows", "remove", "to-delete.json", "--yes"])
+    assert result.exit_code == 0
+    assert not wf_path.exists()
+
+
+def test_remove_cmd_dry_run_does_not_delete(runner, tmp_path, monkeypatch):
+    workflows_dir = tmp_path / "workflows"
+    workflows_dir.mkdir()
+    workspace_dir = tmp_path / "workspace"
+    workspace_dir.mkdir()
+
+    wf_path = workflows_dir / "keep.json"
+    wf_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        workflows_module, "comfyui_workflows_dir", lambda: workflows_dir
+    )
+    monkeypatch.setattr(
+        workflows_module, "comfyui_workspace_dir", lambda: workspace_dir
+    )
+
+    result = runner.invoke(app, ["workflows", "remove", "keep.json", "--dry-run"])
+    assert result.exit_code == 0
+    assert wf_path.exists()
+    assert "Would remove" in result.stdout
+
+
+def test_remove_cmd_rejects_outside_paths(runner, tmp_path, monkeypatch):
+    workflows_dir = tmp_path / "workflows"
+    workflows_dir.mkdir()
+    workspace_dir = tmp_path / "workspace"
+    workspace_dir.mkdir()
+
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        workflows_module, "comfyui_workflows_dir", lambda: workflows_dir
+    )
+    monkeypatch.setattr(
+        workflows_module, "comfyui_workspace_dir", lambda: workspace_dir
+    )
+
+    result = runner.invoke(app, ["workflows", "remove", str(outside), "--yes"])
+    assert result.exit_code == 2
+    assert "outside" in result.stdout.lower()
+
+
 def test_api_cmd(runner):
     result = runner.invoke(app, ["workflows", "api"])
     assert result.exit_code == 0
