@@ -4,14 +4,18 @@ Docker runtime support for airpods CLI.
 
 ## Current State
 
-Airpods has a partial abstraction layer for container runtimes:
+**Phase 1 Complete ✓** - Core Docker runtime implementation is done:
 
-- `ContainerRuntime` Protocol defined in `airpods/runtime.py`
-- `PodmanRuntime` class implements this interface
-- `get_runtime(prefer)` factory accepts `"docker"` but raises `ContainerRuntimeError`
+- `ContainerRuntime` Protocol extended with exec/copy/inspect methods
+- `PodmanRuntime` class fully implements the extended protocol
+- `DockerRuntime` class created in `airpods/docker.py` with full implementation
+- `get_runtime(prefer)` factory now returns `DockerRuntime` when `prefer="docker"`
 - Configuration schema (`runtime.prefer`) accepts `"auto"`, `"podman"`, `"docker"`
+- Tests updated to verify both Podman and Docker runtimes
 
-**Docker is recognized as a valid option but not implemented.**
+**Docker is now fully supported at the runtime layer.**
+
+Remaining work: Phases 2-4 (refactoring hardcoded calls, dynamic dependencies, GPU abstraction).
 
 ## Architecture Overview
 
@@ -35,16 +39,16 @@ Airpods has a partial abstraction layer for container runtimes:
                │                              │
                ▼                              ▼
 ┌──────────────────────────┐    ┌──────────────────────────────┐
-│     PodmanRuntime ✓      │    │     DockerRuntime (TODO)     │
+│     PodmanRuntime ✓      │    │     DockerRuntime ✓          │
 │  airpods/podman.py       │    │  airpods/docker.py           │
 └──────────────────────────┘    └──────────────────────────────┘
 ```
 
 ## Implementation Phases
 
-### Phase 1: Core DockerRuntime
+### Phase 1: Core DockerRuntime ✓ COMPLETE
 
-Create `airpods/docker.py` implementing `ContainerRuntime` protocol.
+Created `airpods/docker.py` implementing `ContainerRuntime` protocol.
 
 #### Methods to implement
 
@@ -94,7 +98,7 @@ def run_container(self, *, pod: str, name: str, image: str, ...):
     pass
 ```
 
-### Phase 2: Refactor Hardcoded Podman Calls
+### Phase 2: Refactor Hardcoded Podman Calls (TODO)
 
 Files with direct `podman` subprocess calls outside the runtime:
 
@@ -141,7 +145,7 @@ class ContainerRuntime(Protocol):
         ...
 ```
 
-### Phase 3: Dynamic Dependencies
+### Phase 3: Dynamic Dependencies (TODO)
 
 Update dependency checks to be runtime-aware.
 
@@ -160,7 +164,7 @@ def __init__(self, ..., runtime_name: str = "podman"):
     self.required_dependencies = config.dependencies.required + runtime_deps
 ```
 
-### Phase 4: GPU Abstraction
+### Phase 4: GPU Abstraction (TODO)
 
 Separate GPU device flag logic per runtime.
 
@@ -186,9 +190,18 @@ def get_gpu_device_flag(runtime: str, config_flag: Optional[str] = None) -> Opti
     return get_podman_gpu_flag()
 ```
 
-### Phase 5: Tests
+### Phase 5: Tests (IN PROGRESS)
 
 Add Docker-specific tests.
+
+**Completed:**
+- Updated `tests/test_runtime.py` with `TestDockerRuntime` class
+- Verified DockerRuntime instantiation and protocol compliance
+- Updated existing tests to accept Docker runtime
+
+**TODO:**
+- Add `tests/test_docker_runtime.py` for Docker-specific integration tests
+- Add cross-runtime compatibility tests
 
 ```
 tests/
@@ -204,29 +217,30 @@ Mock-based tests for unit testing, optional integration tests when Docker availa
 
 ### New Files
 
-| File | Purpose |
-|------|---------|
-| `airpods/docker.py` | Docker subprocess wrapper (mirrors podman.py) |
-| `tests/test_docker_runtime.py` | Docker runtime unit tests |
+| File | Purpose | Status |
+|------|---------|--------|
+| `airpods/docker.py` | Docker subprocess wrapper (mirrors podman.py) | ✓ Complete |
+| `tests/test_docker_runtime.py` | Docker runtime unit tests | TODO |
 
 ### Modified Files
 
-| File | Changes |
-|------|---------|
-| `airpods/runtime.py` | Add `DockerRuntime` class, update `get_runtime()` |
-| `airpods/gpu.py` | Runtime-aware GPU flag selection |
-| `airpods/plugins.py` | Use runtime abstraction for exec |
-| `airpods/ollama.py` | Use runtime abstraction for exec/cp |
-| `airpods/services.py` | Pass runtime name for dependency selection |
-| `airpods/configuration/defaults.py` | Split dependencies by runtime |
-| `airpods/configuration/schema.py` | Update DependenciesConfig model |
-| `airpods/cli/common.py` | Runtime-aware remediation messages |
-| `airpods/cli/commands/backup.py` | Use runtime abstraction |
-| `airpods/cli/commands/start.py` | Use runtime abstraction |
-| `airpods/cli/commands/stop.py` | Use runtime abstraction |
-| `airpods/cli/commands/clean.py` | Use runtime abstraction |
-| `airpods/cli/status_view.py` | Use runtime abstraction |
-| `tests/test_runtime.py` | Add DockerRuntime tests |
+| File | Changes | Status |
+|------|---------|--------|
+| `airpods/runtime.py` | Add `DockerRuntime` class, extend protocol, update `get_runtime()` | ✓ Complete |
+| `airpods/podman.py` | Add exec/copy/inspect methods | ✓ Complete |
+| `tests/test_runtime.py` | Add DockerRuntime tests | ✓ Complete |
+| `airpods/gpu.py` | Runtime-aware GPU flag selection | TODO |
+| `airpods/plugins.py` | Use runtime abstraction for exec | TODO |
+| `airpods/ollama.py` | Use runtime abstraction for exec/cp | TODO |
+| `airpods/services.py` | Pass runtime name for dependency selection | TODO |
+| `airpods/configuration/defaults.py` | Split dependencies by runtime | TODO |
+| `airpods/configuration/schema.py` | Update DependenciesConfig model | TODO |
+| `airpods/cli/common.py` | Runtime-aware remediation messages | TODO |
+| `airpods/cli/commands/backup.py` | Use runtime abstraction | TODO |
+| `airpods/cli/commands/start.py` | Use runtime abstraction | TODO |
+| `airpods/cli/commands/stop.py` | Use runtime abstraction | TODO |
+| `airpods/cli/commands/clean.py` | Use runtime abstraction | TODO |
+| `airpods/cli/status_view.py` | Use runtime abstraction | TODO |
 
 ## Estimated Effort
 
@@ -265,11 +279,19 @@ Mock-based tests for unit testing, optional integration tests when Docker availa
 
 ## Success Criteria
 
+### Phase 1 (Complete)
+- [x] `DockerRuntime` class implemented in `airpods/docker.py`
+- [x] `get_runtime("docker")` returns `DockerRuntime` instance
+- [x] Protocol extended with exec/copy/inspect methods
+- [x] Both PodmanRuntime and DockerRuntime implement full protocol
+- [x] Tests verify Docker runtime instantiation and method availability
+
+### Remaining (Phases 2-5)
 - [ ] `airpods doctor` passes with Docker installed (Podman absent)
 - [ ] `airpods start ollama` launches Ollama container via Docker
 - [ ] `airpods status` shows correct container status
 - [ ] `airpods logs ollama` streams logs correctly
 - [ ] `airpods stop` cleanly stops containers
 - [ ] GPU passthrough works with NVIDIA + Docker
-- [ ] All existing tests pass
-- [ ] New Docker tests pass
+- [ ] All existing tests pass with Docker runtime
+- [ ] Docker-specific integration tests added

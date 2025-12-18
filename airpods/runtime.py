@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import subprocess
 from typing import Dict, Iterable, List, Optional, Protocol
 
-from airpods import podman
+from airpods import docker, podman
 
 
 class ContainerRuntimeError(RuntimeError):
@@ -119,6 +120,28 @@ class ContainerRuntime(Protocol):
 
     def remove_image(self, image: str) -> None:
         """Remove an image."""
+        ...
+
+    def exec_in_container(
+        self, container: str, command: List[str], **kwargs
+    ) -> subprocess.CompletedProcess:
+        """Execute a command inside a running container."""
+        ...
+
+    def copy_to_container(self, src: str, container: str, dest: str) -> None:
+        """Copy a file from host to container."""
+        ...
+
+    def copy_from_container(self, container: str, src: str, dest: str) -> None:
+        """Copy a file from container to host."""
+        ...
+
+    def container_inspect(self, name: str) -> Optional[Dict]:
+        """Inspect a container and return its configuration."""
+        ...
+
+    def list_containers(self, filters: Optional[Dict] = None) -> List[Dict]:
+        """List containers matching filters."""
         ...
 
 
@@ -239,6 +262,176 @@ class PodmanRuntime:
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc
 
+    def exec_in_container(
+        self, container: str, command: List[str], **kwargs
+    ) -> subprocess.CompletedProcess:
+        try:
+            return podman.exec_in_container(container, command, **kwargs)
+        except podman.PodmanError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def copy_to_container(self, src: str, container: str, dest: str) -> None:
+        try:
+            podman.copy_to_container(src, container, dest)
+        except podman.PodmanError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def copy_from_container(self, container: str, src: str, dest: str) -> None:
+        try:
+            podman.copy_from_container(container, src, dest)
+        except podman.PodmanError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def container_inspect(self, name: str) -> Optional[Dict]:
+        return podman.container_inspect(name)
+
+    def list_containers(self, filters: Optional[Dict] = None) -> List[Dict]:
+        return podman.list_containers(filters)
+
+
+class DockerRuntime:
+    """Docker implementation of the container runtime interface."""
+
+    def ensure_volume(self, name: str) -> bool:
+        try:
+            return docker.ensure_volume(name)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def pull_image(self, image: str) -> None:
+        try:
+            docker.pull_image(image)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def ensure_pod(
+        self,
+        pod: str,
+        ports: Iterable[tuple[int, int]],
+        userns_mode: Optional[str] = None,
+    ) -> bool:
+        try:
+            return docker.ensure_pod(pod, ports, userns_mode=userns_mode)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def run_container(
+        self,
+        *,
+        pod: str,
+        name: str,
+        image: str,
+        env: Dict[str, str],
+        volumes: Iterable[tuple[str, str]],
+        gpu: bool = False,
+        restart_policy: str = "unless-stopped",
+        gpu_device_flag: Optional[str] = None,
+        pids_limit: int = 2048,
+        userns_mode: Optional[str] = None,
+    ) -> bool:
+        try:
+            return docker.run_container(
+                pod=pod,
+                name=name,
+                image=image,
+                env=env,
+                volumes=volumes,
+                gpu=gpu,
+                restart_policy=restart_policy,
+                gpu_device_flag=gpu_device_flag,
+                pids_limit=pids_limit,
+                userns_mode=userns_mode,
+            )
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def container_exists(self, name: str) -> bool:
+        return docker.container_exists(name)
+
+    def pod_exists(self, name: str) -> bool:
+        return docker.pod_exists(name)
+
+    def stop_pod(self, name: str, timeout: int = 10) -> None:
+        try:
+            docker.stop_pod(name, timeout=timeout)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def remove_pod(self, name: str) -> None:
+        try:
+            docker.remove_pod(name)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def pod_status(self) -> List[Dict]:
+        return docker.pod_status()
+
+    def pod_inspect(self, name: str) -> Optional[Dict]:
+        return docker.pod_inspect(name)
+
+    def stream_logs(
+        self,
+        container: str,
+        *,
+        follow: bool = False,
+        tail: Optional[int] = None,
+        since: Optional[str] = None,
+    ) -> int:
+        return docker.stream_logs(container, follow=follow, tail=tail, since=since)
+
+    def image_size(self, image: str) -> Optional[str]:
+        return docker.image_size(image)
+
+    def image_exists(self, image: str) -> bool:
+        return docker.image_exists(image)
+
+    def image_size_bytes(self, image: str) -> Optional[int]:
+        return docker.image_size_bytes(image)
+
+    def get_remote_image_size(self, image: str) -> Optional[int]:
+        return docker.get_remote_image_size(image)
+
+    def list_volumes(self) -> List[str]:
+        return docker.list_volumes()
+
+    def remove_volume(self, name: str) -> None:
+        try:
+            docker.remove_volume(name)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def remove_image(self, image: str) -> None:
+        try:
+            docker.remove_image(image)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def exec_in_container(
+        self, container: str, command: List[str], **kwargs
+    ) -> subprocess.CompletedProcess:
+        try:
+            return docker.exec_in_container(container, command, **kwargs)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def copy_to_container(self, src: str, container: str, dest: str) -> None:
+        try:
+            docker.copy_to_container(src, container, dest)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def copy_from_container(self, container: str, src: str, dest: str) -> None:
+        try:
+            docker.copy_from_container(container, src, dest)
+        except docker.DockerError as exc:
+            raise ContainerRuntimeError(str(exc)) from exc
+
+    def container_inspect(self, name: str) -> Optional[Dict]:
+        return docker.container_inspect(name)
+
+    def list_containers(self, filters: Optional[Dict] = None) -> List[Dict]:
+        return docker.list_containers(filters)
+
 
 def get_runtime(prefer: str | None) -> ContainerRuntime:
     """Get a container runtime instance based on preference.
@@ -256,8 +449,6 @@ def get_runtime(prefer: str | None) -> ContainerRuntime:
         return PodmanRuntime()
 
     if prefer == "docker":
-        raise ContainerRuntimeError(
-            "Docker is not supported yet. Please set runtime.prefer back to 'podman' or 'auto' and try again."
-        )
+        return DockerRuntime()
 
     raise ContainerRuntimeError(f"Unknown runtime '{prefer}'")
