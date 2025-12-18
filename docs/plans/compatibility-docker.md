@@ -4,16 +4,16 @@ Docker runtime support for airpods CLI.
 
 ## Current State
 
-**Phase 1 Complete ✓** - Core Docker runtime implementation is done:
+**Phase 1 Complete ✓** - Core runtime abstraction + Docker adapter is in place:
 
-- `ContainerRuntime` Protocol extended with exec/copy/inspect methods
-- `PodmanRuntime` class fully implements the extended protocol
-- `DockerRuntime` class created in `airpods/docker.py` with full implementation
-- `get_runtime(prefer)` factory now returns `DockerRuntime` when `prefer="docker"`
+- `ContainerRuntime` Protocol extended with exec/copy/inspect methods (+ container listing)
+- `PodmanRuntime` and `DockerRuntime` adapters implemented in `airpods/runtime.py`
+- Docker subprocess wrapper implemented in `airpods/docker.py` (mirrors `airpods/podman.py`)
+- `get_runtime(prefer)` factory returns `DockerRuntime` when `prefer="docker"`
 - Configuration schema (`runtime.prefer`) accepts `"auto"`, `"podman"`, `"docker"`
-- Tests updated to verify both Podman and Docker runtimes
+- Tests cover runtime selection and Docker parsing/normalization
 
-**Docker is now fully supported at the runtime layer.**
+Docker is supported at the runtime layer, but the CLI is not end-to-end Docker-ready yet because several commands still shell out to `podman` directly (Phase 2).
 
 Remaining work: Phases 2-4 (refactoring hardcoded calls, dynamic dependencies, GPU abstraction).
 
@@ -40,6 +40,11 @@ Remaining work: Phases 2-4 (refactoring hardcoded calls, dynamic dependencies, G
                ▼                              ▼
 ┌──────────────────────────┐    ┌──────────────────────────────┐
 │     PodmanRuntime ✓      │    │     DockerRuntime ✓          │
+│  airpods/runtime.py      │    │  airpods/runtime.py          │
+└──────────────────────────┘    └──────────────────────────────┘
+
+┌──────────────────────────┐    ┌──────────────────────────────┐
+│   podman subprocess ✓    │    │   docker subprocess ✓        │
 │  airpods/podman.py       │    │  airpods/docker.py           │
 └──────────────────────────┘    └──────────────────────────────┘
 ```
@@ -48,7 +53,7 @@ Remaining work: Phases 2-4 (refactoring hardcoded calls, dynamic dependencies, G
 
 ### Phase 1: Core DockerRuntime ✓ COMPLETE
 
-Created `airpods/docker.py` implementing `ContainerRuntime` protocol.
+Created `airpods/docker.py` (subprocess wrapper) and `DockerRuntime` in `airpods/runtime.py` (adapter implementing `ContainerRuntime`).
 
 #### Methods to implement
 
@@ -69,7 +74,7 @@ Created `airpods/docker.py` implementing `ContainerRuntime` protocol.
 | `pod_exists(pod)` | `podman pod inspect` | N/A | **No Docker equivalent** |
 | `stop_pod(name)` | `podman pod stop` | `docker stop` (per container) | Different model |
 | `remove_pod(name)` | `podman pod rm` | `docker rm` (per container) | Different model |
-| `pod_status()` | `podman pod ps --format json` | `docker ps --format json` | Different JSON schema |
+| `pod_status()` | `podman pod ps --format json` | `docker ps --format '{{json .}}'` | Docker emits JSON per line; we normalize/group |
 | `pod_inspect(name)` | `podman pod inspect` | `docker inspect` (network) | Different model |
 
 #### The Pod Problem
@@ -104,46 +109,15 @@ Files with direct `podman` subprocess calls outside the runtime:
 
 | File | Usage | Refactor Approach |
 |------|-------|-------------------|
-| `airpods/plugins.py` | `podman exec` for SQLite | Add `exec_in_container(container, cmd)` to runtime |
-| `airpods/ollama.py` | `podman exec`, `podman cp` | Add `exec_in_container()`, `copy_to_container()` |
-| `cli/commands/backup.py` | `podman exec` for DB export | Use runtime abstraction |
-| `cli/commands/start.py` | `podman pull`, `podman exec` | Use runtime abstraction |
-| `cli/commands/stop.py` | `podman container ls` | Add `list_containers()` to runtime |
-| `cli/commands/clean.py` | Image/volume discovery | Use existing runtime methods |
-| `cli/status_view.py` | `podman container inspect` | Add `container_inspect()` to runtime |
+| `airpods/plugins.py` | `podman exec` for SQLite | Use `manager.runtime.exec_in_container(...)` |
+| `airpods/ollama.py` | `podman exec`, `podman cp` | Use `manager.runtime.exec_in_container(...)` / `copy_*` |
+| `airpods/cli/commands/backup.py` | `podman exec` for DB export | Route through runtime |
+| `airpods/cli/commands/start.py` | `podman pull`, `podman exec` | Route through runtime |
+| `airpods/cli/commands/stop.py` | `podman container ls` | Prefer runtime `list_containers()` |
+| `airpods/cli/commands/clean.py` | Podman-specific discovery | Route through runtime where possible |
+| `airpods/cli/status_view.py` | `podman container inspect` for uptime | Use runtime (or handle Docker separately) |
 
-#### New Runtime Methods Required
-
-```python
-class ContainerRuntime(Protocol):
-    # ... existing methods ...
-
-    def exec_in_container(
-        self, container: str, command: List[str], **kwargs
-    ) -> subprocess.CompletedProcess:
-        """Execute a command inside a running container."""
-        ...
-
-    def copy_to_container(
-        self, src: str, container: str, dest: str
-    ) -> None:
-        """Copy a file from host to container."""
-        ...
-
-    def copy_from_container(
-        self, container: str, src: str, dest: str
-    ) -> None:
-        """Copy a file from container to host."""
-        ...
-
-    def container_inspect(self, name: str) -> Optional[Dict]:
-        """Inspect a container and return its configuration."""
-        ...
-
-    def list_containers(self, filters: Optional[Dict] = None) -> List[Dict]:
-        """List containers matching filters."""
-        ...
-```
+Runtime methods needed for this phase (`exec_in_container`, `copy_*`, `container_inspect`, `list_containers`) are already implemented; remaining work is wiring the call sites.
 
 ### Phase 3: Dynamic Dependencies (TODO)
 
@@ -198,15 +172,16 @@ Add Docker-specific tests.
 - Updated `tests/test_runtime.py` with `TestDockerRuntime` class
 - Verified DockerRuntime instantiation and protocol compliance
 - Updated existing tests to accept Docker runtime
+- Added mock-based tests for Docker `docker ps` parsing and status normalization
 
 **TODO:**
-- Add `tests/test_docker_runtime.py` for Docker-specific integration tests
 - Add cross-runtime compatibility tests
+- Add optional Docker integration tests (skip when Docker absent)
 
 ```
 tests/
 ├── test_runtime.py           # Update to test DockerRuntime
-├── test_docker_runtime.py    # New Docker-specific tests
+├── test_docker_runtime.py    # Docker-specific unit tests (mock-based)
 ├── test_runtime_compat.py    # Cross-runtime compatibility tests
 └── conftest.py               # Fixtures for both runtimes
 ```
@@ -220,7 +195,7 @@ Mock-based tests for unit testing, optional integration tests when Docker availa
 | File | Purpose | Status |
 |------|---------|--------|
 | `airpods/docker.py` | Docker subprocess wrapper (mirrors podman.py) | ✓ Complete |
-| `tests/test_docker_runtime.py` | Docker runtime unit tests | TODO |
+| `tests/test_docker_runtime.py` | Docker helper unit tests (mock-based) | ✓ Complete |
 
 ### Modified Files
 
@@ -280,7 +255,8 @@ Mock-based tests for unit testing, optional integration tests when Docker availa
 ## Success Criteria
 
 ### Phase 1 (Complete)
-- [x] `DockerRuntime` class implemented in `airpods/docker.py`
+- [x] `DockerRuntime` adapter implemented in `airpods/runtime.py`
+- [x] Docker subprocess wrapper implemented in `airpods/docker.py`
 - [x] `get_runtime("docker")` returns `DockerRuntime` instance
 - [x] Protocol extended with exec/copy/inspect methods
 - [x] Both PodmanRuntime and DockerRuntime implement full protocol

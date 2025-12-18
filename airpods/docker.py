@@ -36,6 +36,69 @@ def _format_exc_output(exc: subprocess.CalledProcessError) -> str:
     return output.strip() if output else ""
 
 
+def _ps_json(filters: Optional[Dict] = None) -> List[Dict]:
+    """Return docker ps results as a list of dicts.
+
+    Docker doesn't support Podman's `--format json` output. Instead we use a Go
+    template that emits one JSON object per line.
+    """
+    args: List[str] = ["ps", "--all", "--format", "{{json .}}"]
+    if filters:
+        for key, value in filters.items():
+            args.extend(["--filter", f"{key}={value}"])
+
+    try:
+        proc = _run(args)
+    except subprocess.CalledProcessError:
+        return []
+
+    containers: List[Dict] = []
+    for line in (proc.stdout or "").splitlines():
+        if not line.strip():
+            continue
+        try:
+            containers.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return containers
+
+
+def _normalize_container_status(status: str) -> str:
+    """Map docker ps 'Status' strings to Podman-like status values."""
+    value = (status or "").strip()
+    if not value:
+        return "Unknown"
+    if value == "running":
+        return "Running"
+
+    # `docker ps` typically prefixes with "Up", "Exited", etc.
+    if value.startswith("Up"):
+        return "Running"
+    if value.startswith("Exited"):
+        return "Exited"
+    if value.startswith("Created"):
+        return "Created"
+    if value.startswith("Restarting"):
+        return "Restarting"
+    if value.startswith("Paused"):
+        return "Paused"
+
+    return "Unknown"
+
+
+def _merge_pod_status(current: str, incoming: str) -> str:
+    """Choose an overall pod status from container statuses."""
+    order = {
+        "Running": 0,
+        "Restarting": 1,
+        "Paused": 2,
+        "Exited": 3,
+        "Created": 4,
+        "Unknown": 5,
+    }
+    return incoming if order.get(incoming, 99) < order.get(current, 99) else current
+
+
 def volume_exists(name: str) -> bool:
     try:
         _run(["volume", "inspect", name])
@@ -262,48 +325,31 @@ def pod_status() -> List[Dict]:
 
     Returns container data in a format compatible with Podman's pod status.
     """
-    try:
-        proc = _run(["ps", "--all", "--format", "json"])
-        # Docker returns one JSON object per line, not an array
-        lines = proc.stdout.strip().splitlines()
-        containers = []
-        for line in lines:
-            if line.strip():
-                try:
-                    containers.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+    containers = _ps_json()
 
-        # Group containers by pod name (extracted from container name pattern)
-        pods = {}
-        for container in containers:
-            name = container.get("Names", "")
-            if not name:
-                continue
+    # Group containers by pod name (extracted from container name pattern)
+    pods: Dict[str, Dict] = {}
+    for container in containers:
+        name = container.get("Names", "")
+        if not name:
+            continue
 
-            # Extract pod name from container naming pattern (e.g., "ollama-0" -> "ollama")
-            if "-" in name:
-                pod_name = name.rsplit("-", 1)[0]
-            else:
-                pod_name = name
+        raw_status = container.get("State") or container.get("Status") or ""
+        status = _normalize_container_status(str(raw_status))
 
-            if pod_name not in pods:
-                pods[pod_name] = {
-                    "Name": pod_name,
-                    "Status": container.get("State", "unknown"),
-                    "Containers": [],
-                }
-            pods[pod_name]["Containers"].append(
-                {
-                    "Names": name,
-                    "Status": container.get("State", "unknown"),
-                }
+        # Extract pod name from container naming pattern (e.g., "ollama-0" -> "ollama")
+        pod_name = name.rsplit("-", 1)[0] if "-" in name else name
+
+        if pod_name not in pods:
+            pods[pod_name] = {"Name": pod_name, "Status": status, "Containers": []}
+        else:
+            pods[pod_name]["Status"] = _merge_pod_status(
+                pods[pod_name]["Status"], status
             )
 
-        return list(pods.values())
-    except (subprocess.CalledProcessError, json.JSONDecodeError):
-        console.print("[warn]could not parse docker ps output[/]")
-        return []
+        pods[pod_name]["Containers"].append({"Names": name, "Status": status})
+
+    return list(pods.values())
 
 
 def pod_inspect(name: str) -> Optional[Dict]:
@@ -463,21 +509,4 @@ def container_inspect(name: str) -> Optional[Dict]:
 
 def list_containers(filters: Optional[Dict] = None) -> List[Dict]:
     """List containers matching filters."""
-    args = ["ps", "--all", "--format", "json"]
-    if filters:
-        for key, value in filters.items():
-            args.extend(["--filter", f"{key}={value}"])
-
-    try:
-        proc = _run(args)
-        # Docker returns one JSON object per line
-        containers = []
-        for line in proc.stdout.strip().splitlines():
-            if line.strip():
-                try:
-                    containers.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-        return containers
-    except subprocess.CalledProcessError:
-        return []
+    return _ps_json(filters)
