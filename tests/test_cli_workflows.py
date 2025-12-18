@@ -198,3 +198,93 @@ def test_workflows_sync_download_failure_is_reported_cleanly(
     assert result.exit_code == 1
     assert "download(s) failed" in result.stdout
     assert "Traceback" not in result.stdout
+
+
+def test_workflows_list_shows_auto_sync_indicator(runner):
+    workspace = workflows_module.comfyui_workspace_dir()
+    workflows_dir = workspace / "ComfyUI" / "user" / "default" / "workflows"
+    workflows_dir.mkdir(parents=True, exist_ok=True)
+
+    # Workflow that is missing a model but includes embedded URL metadata (auto-syncable)
+    wf_auto = workflows_dir / "wf_auto.json"
+    wf_auto.write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {
+                        "id": 1,
+                        "type": "CheckpointLoaderSimple",
+                        "properties": {
+                            "models": [
+                                {
+                                    "name": "auto.safetensors",
+                                    "url": "https://example.com/auto.safetensors",
+                                    "directory": "checkpoints",
+                                }
+                            ]
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Workflow that is missing a model and lacks URL metadata (not auto-syncable)
+    wf_noauto = workflows_dir / "wf_noauto.json"
+    wf_noauto.write_text(
+        json.dumps(
+            {
+                "1": {
+                    "class_type": "CheckpointLoaderSimple",
+                    "inputs": {"ckpt_name": "noauto.safetensors"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["workflows", "list", "--limit", "10"])
+    assert result.exit_code == 0
+    assert "Auto-sync" in result.stdout
+
+    auto_line = next(
+        line for line in result.stdout.splitlines() if "wf_auto.json" in line
+    )
+    assert "✓" in auto_line
+    assert "✗ 1 missing" in auto_line
+
+    noauto_line = next(
+        line for line in result.stdout.splitlines() if "wf_noauto.json" in line
+    )
+    assert noauto_line.count("✗") >= 2
+
+
+def test_workflows_desync_deletes_referenced_model_files(runner):
+    workspace = workflows_module.comfyui_workspace_dir()
+    workflows_dir = workspace / "ComfyUI" / "user" / "default" / "workflows"
+    workflows_dir.mkdir(parents=True, exist_ok=True)
+
+    wf_path = workflows_dir / "wf_desync.json"
+    wf_path.write_text(
+        json.dumps(
+            {
+                "1": {
+                    "class_type": "CheckpointLoaderSimple",
+                    "inputs": {"ckpt_name": "todelete.safetensors"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    models_root = workflows_module.comfyui_models_dir()
+    model_path = models_root / "checkpoints" / "todelete.safetensors"
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    model_path.write_bytes(b"x" * 1024)
+    assert model_path.exists()
+
+    result = runner.invoke(app, ["workflows", "desync", str(wf_path), "--yes"])
+    assert result.exit_code == 0
+    assert "Deleted 1 file(s)" in result.stdout
+    assert not model_path.exists()

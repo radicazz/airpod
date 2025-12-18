@@ -683,6 +683,7 @@ def list_cmd(
     table = Table(show_header=True, show_edge=False, show_lines=False, padding=(0, 2))
     table.add_column("Workflow", style="cyan", no_wrap=False)
     table.add_column("Models", justify="right", style="yellow")
+    table.add_column("Auto-sync", justify="center", style="magenta")
     table.add_column("Status", style="green")
 
     for path in shown:
@@ -695,11 +696,12 @@ def list_cmd(
 
             if not refs:
                 # No models found
-                table.add_row(str(rel), "0", "[dim]—[/]")
+                table.add_row(str(rel), "0", "[dim]—[/]", "[dim]—[/]")
                 continue
 
             # Check how many models are missing
             missing_count = 0
+            missing_refs: list[ModelRef] = []
             for ref in refs:
                 filename = ref.filename
                 if ref.folder:
@@ -708,14 +710,21 @@ def list_cmd(
                     candidate = models_root / ref.folder / subdir / filename
                     if not candidate.exists():
                         missing_count += 1
+                        missing_refs.append(ref)
                 else:
                     # Check anywhere in models directory
                     found = next(models_root.rglob(filename), None)
                     if found is None:
                         missing_count += 1
+                        missing_refs.append(ref)
 
             total = len(refs)
             synced = total - missing_count
+
+            can_auto_sync = missing_count == 0 or all(
+                bool(ref.url) and bool(ref.folder) for ref in missing_refs
+            )
+            auto_sync = "[ok]✓[/]" if can_auto_sync else "[error]✗[/]"
 
             # Format status
             if missing_count == 0:
@@ -725,11 +734,11 @@ def list_cmd(
             else:
                 status = f"[error]✗ {missing_count} missing[/]"
 
-            table.add_row(str(rel), str(total), status)
+            table.add_row(str(rel), str(total), auto_sync, status)
 
         except Exception as e:
             # If we can't parse the workflow, show basic info
-            table.add_row(str(rel), "?", f"[dim]error: {e}[/]")
+            table.add_row(str(rel), "?", "[dim]?[/]", f"[dim]error: {e}[/]")
 
     console.print(table)
 
@@ -1028,6 +1037,178 @@ def sync_cmd(
 
     if without_urls:
         console.print(f"[warn]{len(without_urls)} model(s) still need URLs to sync[/]")
+
+
+def _format_bytes(bytes_count: int) -> str:
+    for unit in ["B", "KB", "MB", "GB"]:
+        if bytes_count < 1024.0:
+            return f"{bytes_count:.1f}{unit}"
+        bytes_count /= 1024.0
+    return f"{bytes_count:.1f}TB"
+
+
+def _prune_empty_dirs(path: Path, *, stop_at: Path) -> None:
+    try:
+        stop_at_resolved = stop_at.resolve()
+        current = path.resolve()
+    except OSError:
+        return
+
+    if current == stop_at_resolved:
+        return
+
+    while True:
+        if current == stop_at_resolved:
+            return
+        if not current.is_dir():
+            return
+        try:
+            next(current.iterdir())
+            return
+        except StopIteration:
+            pass
+        except OSError:
+            return
+
+        try:
+            current.rmdir()
+        except OSError:
+            return
+
+        current = current.parent
+
+
+@workflows_app.command(name="desync", context_settings=COMMAND_CONTEXT)
+def desync_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+    workflow: str = typer.Argument(
+        ..., help="Workflow JSON file (path or workspace-relative)."
+    ),
+    mapping: Optional[Path] = typer.Option(
+        None,
+        "--map",
+        help="TOML/JSON mapping of filenames to folders/subdirs (and optional URLs).",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Delete without prompting."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be deleted without deleting."
+    ),
+    unsafe_search: bool = typer.Option(
+        False,
+        "--unsafe-search",
+        help="For models without folder metadata, search by filename under models/ and delete if a single match is found.",
+    ),
+) -> None:
+    """Delete local model files referenced by a workflow to reclaim disk space.
+
+    Warning: this may remove models used by other workflows.
+    """
+    maybe_show_command_help(ctx, help_)
+
+    workflow_path = _resolve_workflow_path(workflow)
+    data = json.loads(workflow_path.read_text(encoding="utf-8"))
+    refs = _dedupe_refs(extract_model_refs(data))
+    if not refs:
+        console.print("[info]No model-like references found in workflow[/]")
+        return
+
+    models_root = comfyui_models_dir()
+    mapping_dict = _load_mapping(mapping) if mapping else {}
+
+    targets: dict[Path, str] = {}
+    skipped_unknown: list[str] = []
+
+    for ref in refs:
+        entry = mapping_dict.get(ref.filename)
+        folder = (entry or {}).get("folder") or ref.folder
+        subdir = (entry or {}).get("subdir") or ref.subdir or ""
+        filename = (entry or {}).get("filename") or ref.filename
+
+        if folder:
+            candidate = models_root / folder / subdir / filename
+            if candidate.exists() and candidate.is_file():
+                try:
+                    targets[candidate.resolve()] = ref.filename
+                except OSError:
+                    targets[candidate] = ref.filename
+            continue
+
+        if not unsafe_search:
+            skipped_unknown.append(ref.filename)
+            continue
+
+        matches = [p for p in models_root.rglob(ref.filename) if p.is_file()]
+        if len(matches) == 1:
+            try:
+                targets[matches[0].resolve()] = ref.filename
+            except OSError:
+                targets[matches[0]] = ref.filename
+        else:
+            skipped_unknown.append(ref.filename)
+
+    if not targets:
+        console.print("[info]No matching local model files found to delete[/]")
+        if skipped_unknown:
+            console.print(
+                f"[dim]Skipped {len(skipped_unknown)} model(s) without folder metadata "
+                "(pass --unsafe-search to try filename matching).[/dim]"
+            )
+        return
+
+    total_bytes = 0
+    for p in targets:
+        try:
+            total_bytes += p.stat().st_size
+        except OSError:
+            pass
+
+    console.print(
+        f"[warn]Will delete {len(targets)} file(s) (~{_format_bytes(total_bytes)}) from models/[/]"
+    )
+    for p in sorted(targets):
+        try:
+            rel = p.relative_to(models_root)
+            console.print(f"  [dim]- models/{rel.as_posix()}[/dim]")
+        except ValueError:
+            console.print(f"  [dim]- {p}[/dim]")
+
+    if skipped_unknown:
+        console.print(
+            f"[dim]Skipped {len(skipped_unknown)} model(s) without a safe destination.[/dim]"
+        )
+
+    if dry_run:
+        return
+
+    if not yes:
+        from rich.prompt import Confirm
+
+        if not Confirm.ask(
+            f"Delete {len(targets)} file(s) referenced by this workflow?",
+            default=False,
+        ):
+            raise typer.Exit(0)
+
+    deleted = 0
+    deleted_bytes = 0
+    for p in sorted(targets):
+        try:
+            size = p.stat().st_size
+        except OSError:
+            size = 0
+        try:
+            p.unlink()
+        except OSError as exc:
+            console.print(f"[warn]Failed to delete {p}: {exc}[/]")
+            continue
+        deleted += 1
+        deleted_bytes += size
+        _prune_empty_dirs(p.parent, stop_at=models_root)
+
+    console.print(
+        f"[ok]✓ Deleted {deleted} file(s) (freed ~{_format_bytes(deleted_bytes)})[/]"
+    )
 
 
 @workflows_app.command(name="remove", context_settings=COMMAND_CONTEXT)
