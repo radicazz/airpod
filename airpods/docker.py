@@ -302,7 +302,13 @@ def run_container(
     if userns_mode:
         args.extend(["--userns", userns_mode])
 
-    for key, val in env.items():
+    # Inject NVIDIA_DRIVER_CAPABILITIES when GPU is enabled for Docker
+    # This limits mounted libraries to compute/utility, avoiding EGL/Wayland dependencies
+    runtime_env = dict(env)
+    if gpu:
+        runtime_env.setdefault("NVIDIA_DRIVER_CAPABILITIES", "compute,utility")
+
+    for key, val in runtime_env.items():
         args.extend(["-e", f"{key}={val}"])
     for volume_name, dest in volumes:
         args.extend(["-v", f"{volume_name}:{dest}"])

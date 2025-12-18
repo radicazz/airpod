@@ -19,7 +19,9 @@ CLI is end-to-end Docker-ready via `ContainerRuntime` abstraction.
 
 **Phase 3 COMPLETE** - Dynamic runtime deps via `runtime_deps` in config.
 
-Remaining work: ollama.py/plugins.py minor refactors (Phase 2 tail), GPU (Phase 4), tests (Phase 5).
+**Phase 4 COMPLETE** - Runtime-aware GPU abstraction implemented. Docker uses `--gpus all` with `NVIDIA_DRIVER_CAPABILITIES=compute,utility` to avoid EGL/Wayland dependencies. Podman uses CDI or legacy flags with SELinux workarounds.
+
+Remaining work: ollama.py/plugins.py minor refactors (Phase 2 tail), additional tests (Phase 5).
 
 ## Architecture Overview
 

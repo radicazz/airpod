@@ -59,16 +59,18 @@ def _apply_cli_config(config) -> None:
     DEFAULT_STARTUP_TIMEOUT = _CONFIG.cli.startup_timeout
     DEFAULT_STARTUP_CHECK_INTERVAL = _CONFIG.cli.startup_check_interval
 
-    # Resolve GPU device flag (auto-detect CDI if "auto")
-    resolved_gpu_flag = gpu_utils.get_gpu_device_flag(_CONFIG.runtime.gpu_device_flag)
-
-    # Compute runtime-specific dependencies
+    # Compute runtime-specific dependencies and GPU flags
     if isinstance(_RUNTIME, PodmanRuntime):
         runtime_name = "podman"
     elif isinstance(_RUNTIME, DockerRuntime):
         runtime_name = "docker"
     else:
         runtime_name = "podman"  # fallback for "auto"
+
+    # Resolve GPU device flag (runtime-aware)
+    resolved_gpu_flag = gpu_utils.get_gpu_device_flag(
+        runtime_name, _CONFIG.runtime.gpu_device_flag
+    )
     runtime_deps = _CONFIG.dependencies.runtime_deps.get(runtime_name, [])
     required_dependencies = _CONFIG.dependencies.required + runtime_deps
 

@@ -60,7 +60,7 @@ def check_cdi_available() -> bool:
         return False
 
 
-def get_gpu_device_flag(config_flag: Optional[str] = None) -> Optional[str]:
+def get_podman_gpu_flag(config_flag: Optional[str] = None) -> Optional[str]:
     """
     Determine the appropriate GPU device flag for Podman.
 
@@ -87,6 +87,48 @@ def get_gpu_device_flag(config_flag: Optional[str] = None) -> Optional[str]:
     # Fallback to legacy method (requires nvidia-container-runtime)
     # This may not work on all systems, but is the best fallback
     return "--gpus all --security-opt=label=disable"
+
+
+def get_docker_gpu_flag(config_flag: Optional[str] = None) -> Optional[str]:
+    """
+    Determine the appropriate GPU device flag for Docker.
+
+    Args:
+        config_flag: User-configured flag from config (can be "auto", explicit flag, or None)
+
+    Returns:
+        Device flag string to pass to Docker, or None if no GPU support detected
+    """
+    # If user specified an explicit flag (not "auto"), use it
+    if config_flag and config_flag != "auto":
+        return config_flag
+
+    # Auto-detection: check for NVIDIA Container Toolkit
+    toolkit_installed, _ = detect_nvidia_container_toolkit()
+    if not toolkit_installed:
+        return None
+
+    # Docker uses --gpus flag (no SELinux workarounds needed)
+    # The NVIDIA_DRIVER_CAPABILITIES env var will control which libraries are mounted
+    return "--gpus all"
+
+
+def get_gpu_device_flag(
+    runtime: str = "podman", config_flag: Optional[str] = None
+) -> Optional[str]:
+    """
+    Determine the appropriate GPU device flag for the specified runtime.
+
+    Args:
+        runtime: Container runtime ("podman" or "docker")
+        config_flag: User-configured flag from config (can be "auto", explicit flag, or None)
+
+    Returns:
+        Device flag string to pass to the runtime, or None if no GPU support detected
+    """
+    if runtime == "docker":
+        return get_docker_gpu_flag(config_flag)
+    return get_podman_gpu_flag(config_flag)
 
 
 def get_cdi_setup_instructions() -> str:
