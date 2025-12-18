@@ -20,7 +20,7 @@ from airpods import __version__ as AIRPODS_VERSION
 from airpods.logging import console
 from airpods.state import configs_dir, volumes_dir
 
-from ..common import COMMAND_CONTEXT, ensure_podman_available, resolve_services
+from ..common import COMMAND_CONTEXT, ensure_runtime_available, resolve_services
 from ..help import command_help_option, maybe_show_command_help
 from ..type_defs import CommandMap
 
@@ -420,7 +420,7 @@ def register(app: typer.Typer) -> CommandMap:
         """Create a portable archive containing configs, DBs, and metadata."""
 
         maybe_show_command_help(ctx, help_)
-        ensure_podman_available()
+        ensure_runtime_available()
 
         dest_dir = destination or Path.cwd()
         _ensure_dir(dest_dir)
@@ -517,7 +517,7 @@ def register(app: typer.Typer) -> CommandMap:
         """Restore configs, DB, and metadata from a backup archive."""
 
         maybe_show_command_help(ctx, help_)
-        ensure_podman_available()
+        ensure_runtime_available()
 
         archive_path = archive.expanduser().resolve()
         if not archive_path.exists():

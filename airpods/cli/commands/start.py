@@ -27,7 +27,7 @@ from airpods.services import ServiceSpec
 
 from ..common import (
     COMMAND_CONTEXT,
-    ensure_podman_available,
+    ensure_runtime_available,
     format_transfer_label,
     is_verbose_mode,
     manager,
@@ -247,7 +247,7 @@ def register(app: typer.Typer) -> CommandMap:
         print_config_info(config_path, verbose=verbose)
 
         specs = resolve_services(service)
-        ensure_podman_available()
+        ensure_runtime_available()
 
         # Enable CUDA logging during startup flows
         import airpods.config as config_module

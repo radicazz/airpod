@@ -13,9 +13,13 @@ Docker runtime support for airpods CLI.
 - Configuration schema (`runtime.prefer`) accepts `"auto"`, `"podman"`, `"docker"`
 - Tests cover runtime selection and Docker parsing/normalization
 
-Docker is supported at the runtime layer, but the CLI is not end-to-end Docker-ready yet because several commands still shell out to `podman` directly (Phase 2).
+CLI is end-to-end Docker-ready via `ContainerRuntime` abstraction.
 
-Remaining work: Phases 2-4 (refactoring hardcoded calls, dynamic dependencies, GPU abstraction).
+**Phase 2 COMPLETE** - All CLI commands route through `manager.runtime`; uptime/status from `runtime.container_inspect`.
+
+**Phase 3 COMPLETE** - Dynamic runtime deps via `runtime_deps` in config.
+
+Remaining work: ollama.py/plugins.py minor refactors (Phase 2 tail), GPU (Phase 4), tests (Phase 5).
 
 ## Architecture Overview
 

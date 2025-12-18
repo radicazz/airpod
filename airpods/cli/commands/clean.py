@@ -20,7 +20,7 @@ from airpods.state import configs_dir, volumes_dir
 from ..common import (
     COMMAND_CONTEXT,
     DEFAULT_STOP_TIMEOUT,
-    ensure_podman_available,
+    ensure_runtime_available,
     manager,
     resolve_services,
 )
@@ -317,7 +317,7 @@ def register(app: typer.Typer) -> CommandMap:
                 code=1,
             )
 
-        ensure_podman_available()
+        ensure_runtime_available()
 
         plan = _collect_cleanup_targets(
             pods=pods,

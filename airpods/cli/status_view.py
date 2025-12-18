@@ -82,28 +82,15 @@ def render_status(specs: List[ServiceSpec]) -> None:
 
         status = row.get("Status", "?")
 
-        # Get uptime from container inspect
         uptime = "-"
-        try:
-            import subprocess
-
-            result = subprocess.run(
-                [
-                    "podman",
-                    "container",
-                    "inspect",
-                    spec.container,
-                    "--format",
-                    "{{.State.StartedAt}}",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                uptime = _format_uptime(result.stdout.strip())
-        except Exception:
-            pass
+        inspect = manager.runtime.container_inspect(spec.container)
+        if (
+            inspect
+            and "State" in inspect
+            and "StartedAt" in inspect["State"]
+            and inspect["State"]["StartedAt"]
+        ):
+            uptime = _format_uptime(inspect["State"]["StartedAt"])
 
         if status == "Running":
             port_bindings = manager.service_ports(spec)

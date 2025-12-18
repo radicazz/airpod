@@ -35,8 +35,12 @@ class CLIConfig(BaseModel):
 
 
 class DependenciesConfig(BaseModel):
-    required: List[str] = Field(
-        default_factory=lambda: ["podman", "podman-compose", "uv"]
+    required: List[str] = Field(default_factory=lambda: ["uv"])
+    runtime_deps: Dict[str, List[str]] = Field(
+        default_factory=lambda: {
+            "podman": ["podman", "podman-compose"],
+            "docker": ["docker", "docker-compose"],
+        }
     )
     optional: List[str] = Field(default_factory=lambda: ["nvidia-smi"])
     skip_checks: bool = False
