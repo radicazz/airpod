@@ -143,6 +143,11 @@ def ensure_runtime_available() -> None:
         raise typer.Exit(code=1)
 
 
+def ensure_podman_available() -> None:
+    """Backwards-compatible alias for older call sites/tests."""
+    ensure_runtime_available()
+
+
 def print_version() -> None:
     console.print(f"[bold]airpods[/bold] [accent]v{__version__}[/]")
 

@@ -186,6 +186,10 @@ class ServiceManager:
                 "Install them and retry."
             )
 
+    def ensure_podman(self) -> None:
+        """Backwards-compatible alias for older call sites/tests."""
+        self.ensure_runtime()
+
     # ----------------------------------------------------------------------------------
     # Pod + container orchestration
     # ----------------------------------------------------------------------------------

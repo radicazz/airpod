@@ -27,6 +27,8 @@ from ..common import (
 from ..help import command_help_option, maybe_show_command_help, exit_with_help
 from ..type_defs import CommandMap
 
+ensure_podman_available = ensure_runtime_available
+
 
 class CleanupPlan:
     """Holds items to be cleaned up."""

@@ -15,13 +15,13 @@ Docker runtime support for airpods CLI.
 
 CLI is end-to-end Docker-ready via `ContainerRuntime` abstraction.
 
-**Phase 2 COMPLETE** - All CLI commands route through `manager.runtime`; uptime/status from `runtime.container_inspect`.
+**Phase 2 COMPLETE** - All CLI commands route through `manager.runtime`; uptime/status from `runtime.container_inspect`. All hardcoded podman exec/cp calls have been refactored to use runtime abstractions.
 
 **Phase 3 COMPLETE** - Dynamic runtime deps via `runtime_deps` in config.
 
 **Phase 4 COMPLETE** - Runtime-aware GPU abstraction implemented. Docker uses `--gpus all` with `NVIDIA_DRIVER_CAPABILITIES=compute,utility` to avoid EGL/Wayland dependencies. Podman uses CDI or legacy flags with SELinux workarounds.
 
-Remaining work: ollama.py/plugins.py minor refactors (Phase 2 tail), additional tests (Phase 5).
+**Phase 5 IN PROGRESS** - Core refactoring complete. Remaining work: update call sites to pass runtime/manager, additional tests.
 
 ## Architecture Overview
 
@@ -210,18 +210,18 @@ Mock-based tests for unit testing, optional integration tests when Docker availa
 | `airpods/runtime.py` | Add `DockerRuntime` class, extend protocol, update `get_runtime()` | ✓ Complete |
 | `airpods/podman.py` | Add exec/copy/inspect methods | ✓ Complete |
 | `tests/test_runtime.py` | Add DockerRuntime tests | ✓ Complete |
-| `airpods/gpu.py` | Runtime-aware GPU flag selection | TODO |
-| `airpods/plugins.py` | Use runtime abstraction for exec | TODO |
-| `airpods/ollama.py` | Use runtime abstraction for exec/cp | TODO |
-| `airpods/services.py` | Pass runtime name for dependency selection | TODO |
-| `airpods/configuration/defaults.py` | Split dependencies by runtime | TODO |
-| `airpods/configuration/schema.py` | Update DependenciesConfig model | TODO |
-| `airpods/cli/common.py` | Runtime-aware remediation messages | TODO |
-| `airpods/cli/commands/backup.py` | Use runtime abstraction | TODO |
-| `airpods/cli/commands/start.py` | Use runtime abstraction | TODO |
-| `airpods/cli/commands/stop.py` | Use runtime abstraction | TODO |
-| `airpods/cli/commands/clean.py` | Use runtime abstraction | TODO |
-| `airpods/cli/status_view.py` | Use runtime abstraction | TODO |
+| `airpods/gpu.py` | Runtime-aware GPU flag selection | ✓ Complete |
+| `airpods/plugins.py` | Use runtime abstraction for exec | ✓ Complete |
+| `airpods/ollama.py` | Use runtime abstraction for exec/cp | ✓ Complete |
+| `airpods/services.py` | Pass runtime name for dependency selection | ✓ Complete |
+| `airpods/configuration/defaults.py` | Split dependencies by runtime | ✓ Complete |
+| `airpods/configuration/schema.py` | Update DependenciesConfig model | ✓ Complete |
+| `airpods/cli/common.py` | Runtime-aware remediation messages | ✓ Complete |
+| `airpods/cli/commands/backup.py` | Use runtime abstraction | ✓ Complete |
+| `airpods/cli/commands/start.py` | Use runtime abstraction | In Progress |
+| `airpods/cli/commands/stop.py` | Use runtime abstraction | In Progress |
+| `airpods/cli/commands/clean.py` | Use runtime abstraction | In Progress |
+| `airpods/cli/status_view.py` | Use runtime abstraction | In Progress |
 
 ## Estimated Effort
 

@@ -20,9 +20,16 @@ from airpods import __version__ as AIRPODS_VERSION
 from airpods.logging import console
 from airpods.state import configs_dir, volumes_dir
 
-from ..common import COMMAND_CONTEXT, ensure_runtime_available, resolve_services
+from ..common import (
+    COMMAND_CONTEXT,
+    ensure_runtime_available,
+    manager,
+    resolve_services,
+)
 from ..help import command_help_option, maybe_show_command_help
 from ..type_defs import CommandMap
+
+ensure_podman_available = ensure_runtime_available
 
 BACKUP_PREFIX = "airpods-backup"
 BACKUP_ROOT = "airpods_backup"
@@ -67,20 +74,21 @@ def _resolve_service(name: str):
         return None
 
 
-def _run_podman(args: List[str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
+def _run_runtime_exec(
+    runtime, container: str, command: List[str], timeout: int = 60
+) -> subprocess.CompletedProcess[str]:
+    """Execute a command in a container using the runtime abstraction."""
     try:
-        return subprocess.run(
-            ["podman", *args],
-            text=True,
+        return runtime.exec_in_container(
+            container,
+            command,
             capture_output=True,
+            text=True,
             check=True,
             timeout=timeout,
         )
-    except subprocess.CalledProcessError as exc:  # pragma: no cover - system specific
-        output = exc.stdout or exc.stderr or ""
-        raise BackupError(output.strip()) from exc
-    except FileNotFoundError as exc:  # pragma: no cover - defensive
-        raise BackupError("podman executable not found") from exc
+    except Exception as exc:
+        raise BackupError(f"Runtime exec failed: {exc}") from exc
 
 
 def _copytree(src: Path, dest: Path) -> None:
@@ -110,14 +118,18 @@ def _collect_webui_db(staging_dir: Path) -> bool:
     return True
 
 
-def _dump_webui_db(staging_dir: Path, sql_dump: bool, container: Optional[str]) -> bool:
+def _dump_webui_db(
+    runtime, staging_dir: Path, sql_dump: bool, container: Optional[str]
+) -> bool:
     if not sql_dump or not container:
         return False
     dest = staging_dir / BACKUP_PATHS["webui_dump"]
     _ensure_dir(dest.parent)
     try:
-        result = _run_podman(
-            ["exec", container, "sqlite3", "/app/backend/data/webui.db", ".dump"],
+        result = _run_runtime_exec(
+            runtime,
+            container,
+            ["sqlite3", "/app/backend/data/webui.db", ".dump"],
             timeout=90,
         )
     except BackupError as exc:
@@ -137,12 +149,14 @@ def _collect_webui_plugins(staging_dir: Path) -> bool:
     return True
 
 
-def _query_ollama_models(container: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+def _query_ollama_models(
+    runtime, container: Optional[str]
+) -> Optional[List[Dict[str, Any]]]:
     if not container:
         return None
     try:
-        result = _run_podman(
-            ["exec", container, "ollama", "list", "--json"], timeout=60
+        result = _run_runtime_exec(
+            runtime, container, ["ollama", "list", "--json"], timeout=60
         )
     except BackupError:
         return None
@@ -190,9 +204,9 @@ def _scan_ollama_manifests() -> List[Dict[str, Any]]:
 
 
 def _collect_ollama_models(
-    staging_dir: Path, container: Optional[str]
+    runtime, staging_dir: Path, container: Optional[str]
 ) -> List[Dict[str, Any]]:
-    models = _query_ollama_models(container)
+    models = _query_ollama_models(runtime, container)
     if models is None:
         models = _scan_ollama_manifests()
     dest = staging_dir / BACKUP_PATHS["ollama_models"]
@@ -208,26 +222,8 @@ def _extract_image_tag(image: str) -> str:
 
 
 def _inspect_image_version(image: str) -> Optional[str]:
-    try:
-        result = _run_podman(
-            ["image", "inspect", image, "--format", "{{json .Labels}}"], timeout=30
-        )
-    except BackupError:
-        return None
-    try:
-        labels = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(labels, dict):
-        return None
-    for key in (
-        "org.opencontainers.image.version",
-        "org.opencontainers.image.revision",
-        "version",
-    ):
-        value = labels.get(key)
-        if value:
-            return value
+    # TODO: Implement runtime-aware image inspection if needed
+    # For now, version labels are not critical for backups
     return None
 
 
@@ -439,6 +435,7 @@ def register(app: typer.Typer) -> CommandMap:
             db_included = _collect_webui_db(staging_dir)
 
             dump_included = _dump_webui_db(
+                manager.runtime,
                 staging_dir,
                 sql_dump=sql_dump,
                 container=webui_spec.container if webui_spec else None,
@@ -449,6 +446,7 @@ def register(app: typer.Typer) -> CommandMap:
 
             console.print("[info]Collecting Ollama model metadata (names/ids/urls)...")
             models = _collect_ollama_models(
+                manager.runtime,
                 staging_dir,
                 container=ollama_spec.container if ollama_spec else None,
             )

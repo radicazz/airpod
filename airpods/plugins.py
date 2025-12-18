@@ -298,18 +298,20 @@ def count_comfyui_plugins() -> int:
     return count
 
 
-def _podman_exec_python(
-    container_name: str, code: str, timeout: int = 10
+def _runtime_exec_python(
+    runtime, container_name: str, code: str, timeout: int = 10
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["podman", "exec", container_name, "python3", "-c", code],
+    """Execute Python code inside a container using the runtime abstraction."""
+    return runtime.exec_in_container(
+        container_name,
+        ["python3", "-c", code],
         capture_output=True,
         text=True,
         timeout=timeout,
     )
 
 
-def _find_admin_user_id(container_name: str) -> str | None:
+def _find_admin_user_id(runtime, container_name: str) -> str | None:
     """Best-effort lookup of an admin user id in Open WebUI."""
     code = """
 import sqlite3
@@ -340,7 +342,7 @@ finally:
         pass
 """
     try:
-        result = _podman_exec_python(container_name, code.strip(), timeout=8)
+        result = _runtime_exec_python(runtime, container_name, code.strip(), timeout=8)
     except Exception as exc:  # pragma: no cover - system specific
         console.print(f"[warn]Unable to query Open WebUI admin user: {exc}[/]")
         return None
@@ -348,7 +350,7 @@ finally:
     return admin_id or None
 
 
-def _any_users_exist(container_name: str) -> bool:
+def _any_users_exist(runtime, container_name: str) -> bool:
     """Check if any users exist in the Open WebUI database."""
     code = """
 import sqlite3
@@ -370,13 +372,13 @@ except Exception:
     pass
 """
     try:
-        result = _podman_exec_python(container_name, code.strip(), timeout=8)
+        result = _runtime_exec_python(runtime, container_name, code.strip(), timeout=8)
     except Exception:  # pragma: no cover - system specific
         return False
     return (result.stdout or "").strip() == "1"
 
 
-def _ensure_default_admin(container_name: str) -> str | None:
+def _ensure_default_admin(runtime, container_name: str) -> str | None:
     """Create a default admin account with known credentials for first-time setup."""
     code = f"""
 import json
@@ -468,7 +470,7 @@ finally:
         pass
 """
     try:
-        result = _podman_exec_python(container_name, code.strip(), timeout=10)
+        result = _runtime_exec_python(runtime, container_name, code.strip(), timeout=10)
     except Exception as exc:  # pragma: no cover - system specific
         console.print(f"[warn]Unable to create default admin: {exc}[/]")
         return None
@@ -488,7 +490,9 @@ def _ensure_airpods_owner(container_name: str) -> str | None:
     return None  # Deprecated in favor of default admin
 
 
-def resolve_plugin_owner_user_id(container_name: str, mode: str = "auto") -> str:
+def resolve_plugin_owner_user_id(
+    runtime, container_name: str, mode: str = "auto"
+) -> str:
     """Resolve which WebUI user id should own imported plugins.
 
     - auto: use an existing admin if possible; if no users exist, use 'system' to allow
@@ -504,7 +508,7 @@ def resolve_plugin_owner_user_id(container_name: str, mode: str = "auto") -> str
         normalized = "auto"
 
     if normalized in {"auto", "admin"}:
-        admin_id = _find_admin_user_id(container_name)
+        admin_id = _find_admin_user_id(runtime, container_name)
         if admin_id:
             return admin_id
         if normalized == "admin":
@@ -515,8 +519,8 @@ def resolve_plugin_owner_user_id(container_name: str, mode: str = "auto") -> str
 
     # In auto mode, create a default admin if no users exist
     if normalized == "auto":
-        if not _any_users_exist(container_name):
-            admin_id = _ensure_default_admin(container_name)
+        if not _any_users_exist(runtime, container_name):
+            admin_id = _ensure_default_admin(runtime, container_name)
             if admin_id:
                 console.print(
                     "[info]Created default admin account: admin@airpods / admin "
@@ -538,6 +542,7 @@ def resolve_plugin_owner_user_id(container_name: str, mode: str = "auto") -> str
 
 
 def import_plugins_to_webui(
+    runtime,
     plugins_dir: Path,
     admin_user_id: str = "system",
     container_name: str = "open-webui-0",
@@ -545,9 +550,10 @@ def import_plugins_to_webui(
     """Import plugins directly into Open WebUI database via SQL.
 
     This bypasses the API entirely and inserts functions directly into
-    the SQLite database using podman exec.
+    the SQLite database using runtime exec.
 
     Args:
+        runtime: Container runtime instance
         plugins_dir: Directory containing plugin .py files
         admin_user_id: User ID to assign as owner (default: "system")
         container_name: Name of the Open WebUI container
@@ -604,23 +610,24 @@ def import_plugins_to_webui(
                 updated_at = excluded.updated_at;
             """
 
-            # Execute via podman exec
-            cmd = [
-                "podman",
-                "exec",
-                container_name,
-                "python3",
-                "-c",
+            # Execute via runtime abstraction
+            python_code = (
                 f"import sqlite3; "
                 f"conn = sqlite3.connect('{WEBUI_DB_PATH}'); "
                 f"cursor = conn.cursor(); "
                 f"cursor.execute({repr(sql)}); "
                 f"conn.commit(); "
                 f"print('Imported {function_id}:', cursor.rowcount); "
-                f"conn.close()",
-            ]
+                f"conn.close()"
+            )
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            result = runtime.exec_in_container(
+                container_name,
+                ["python3", "-c", python_code],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
 
             if result.returncode == 0 and "Imported" in result.stdout:
                 imported += 1

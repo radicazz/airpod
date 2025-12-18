@@ -43,6 +43,8 @@ from ..help import command_help_option, maybe_show_command_help
 from ..status_view import check_service_health, collect_host_ports
 from ..type_defs import CommandMap
 
+ensure_podman_available = ensure_runtime_available
+
 
 def _webui_db_ready(container_name: str) -> bool:
     """Return True if the Open WebUI SQLite DB exists and has a function table."""
