@@ -105,13 +105,15 @@ class TestDockerGPUFlag:
         assert flag is None
 
     @patch("airpods.gpu.detect_nvidia_container_toolkit")
-    def test_docker_uses_gpus_all(self, mock_detect):
-        """Should return --gpus all for Docker (no SELinux opts)."""
+    def test_docker_uses_gpus_with_capabilities(self, mock_detect):
+        """Should return --gpus with explicit capabilities for Docker."""
         mock_detect.return_value = (True, "1.18.1")
         flag = get_docker_gpu_flag()
-        assert flag == "--gpus all"
+        assert flag == '--gpus "device=all,capabilities=compute,utility"'
         # Ensure no SELinux security-opt is included
         assert "security-opt" not in flag
+        # Ensure capabilities are explicitly specified
+        assert "capabilities=compute,utility" in flag
 
 
 class TestGetGPUDeviceFlag:

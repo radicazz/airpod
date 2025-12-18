@@ -108,9 +108,9 @@ def get_docker_gpu_flag(config_flag: Optional[str] = None) -> Optional[str]:
     if not toolkit_installed:
         return None
 
-    # Docker uses --gpus flag (no SELinux workarounds needed)
-    # The NVIDIA_DRIVER_CAPABILITIES env var will control which libraries are mounted
-    return "--gpus all"
+    # Docker uses --gpus with explicit capabilities to avoid mounting display libraries
+    # This prevents errors with missing EGL/Wayland libraries on headless systems
+    return '--gpus "device=all,capabilities=compute,utility"'
 
 
 def get_gpu_device_flag(
