@@ -15,15 +15,48 @@ from airpods.runtime import (
 class TestGetRuntime:
     """Test the runtime factory function."""
 
-    def test_get_runtime_none_returns_podman(self):
-        """get_runtime(None) should return PodmanRuntime."""
+    def test_get_runtime_none_auto_detects(self, monkeypatch):
+        """get_runtime(None) should auto-detect available runtime."""
+
+        # Mock shutil.which to simulate podman being available
+        def mock_which(cmd):
+            return "/usr/bin/podman" if cmd == "podman" else None
+
+        monkeypatch.setattr("shutil.which", mock_which)
         runtime = get_runtime(None)
         assert isinstance(runtime, PodmanRuntime)
 
-    def test_get_runtime_auto_returns_podman(self):
-        """get_runtime('auto') should return PodmanRuntime."""
+    def test_get_runtime_auto_prefers_podman(self, monkeypatch):
+        """get_runtime('auto') should prefer podman when both are available."""
+
+        # Mock both runtimes as available
+        def mock_which(cmd):
+            return f"/usr/bin/{cmd}" if cmd in ("podman", "docker") else None
+
+        monkeypatch.setattr("shutil.which", mock_which)
         runtime = get_runtime("auto")
         assert isinstance(runtime, PodmanRuntime)
+
+    def test_get_runtime_auto_falls_back_to_docker(self, monkeypatch):
+        """get_runtime('auto') should use docker if podman not available."""
+
+        # Mock only docker as available
+        def mock_which(cmd):
+            return "/usr/bin/docker" if cmd == "docker" else None
+
+        monkeypatch.setattr("shutil.which", mock_which)
+        runtime = get_runtime("auto")
+        assert isinstance(runtime, DockerRuntime)
+
+    def test_get_runtime_auto_raises_if_none_available(self, monkeypatch):
+        """get_runtime('auto') should raise error if neither runtime available."""
+        # Mock no runtimes available
+        monkeypatch.setattr("shutil.which", lambda cmd: None)
+        with pytest.raises(
+            ContainerRuntimeError,
+            match="No container runtime found. Please install either Podman or Docker.",
+        ):
+            get_runtime("auto")
 
     def test_get_runtime_podman_returns_podman(self):
         """get_runtime('podman') should return PodmanRuntime."""

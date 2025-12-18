@@ -448,6 +448,20 @@ class DockerRuntime:
         return docker.list_containers(filters)
 
 
+def _runtime_available(runtime_name: str) -> bool:
+    """Check if a container runtime is available on the system.
+
+    Args:
+        runtime_name: Name of the runtime ("podman" or "docker")
+
+    Returns:
+        True if the runtime binary is available in PATH
+    """
+    import shutil
+
+    return shutil.which(runtime_name) is not None
+
+
 def get_runtime(prefer: str | None) -> ContainerRuntime:
     """Get a container runtime instance based on preference.
 
@@ -458,12 +472,22 @@ def get_runtime(prefer: str | None) -> ContainerRuntime:
         A ContainerRuntime implementation.
 
     Raises:
-        ContainerRuntimeError: If the requested runtime is unsupported.
+        ContainerRuntimeError: If the requested runtime is unsupported or unavailable.
     """
-    if prefer in (None, "auto", "podman"):
+    if prefer == "podman":
         return PodmanRuntime()
 
     if prefer == "docker":
         return DockerRuntime()
+
+    if prefer in (None, "auto"):
+        # Auto-detect: prefer podman, fall back to docker, error if neither
+        if _runtime_available("podman"):
+            return PodmanRuntime()
+        if _runtime_available("docker"):
+            return DockerRuntime()
+        raise ContainerRuntimeError(
+            "No container runtime found. Please install either Podman or Docker."
+        )
 
     raise ContainerRuntimeError(f"Unknown runtime '{prefer}'")

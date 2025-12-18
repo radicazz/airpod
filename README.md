@@ -13,7 +13,12 @@ Effortlessly orchestrate *free & open-source* AI services from the command-line:
 ### Prerequisites
 
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/): Install, upgrade & manage `airpods`
-- `podman` + `podman-compose`: Run the service containers
+- Container Runtime (one of the following):
+  - `podman` + `podman-compose` (recommended)
+  - `docker` + `docker-compose`
+
+> [!NOTE]
+> AirPods automatically detects which container runtime is available. If both are installed, Podman is preferred by default. You can explicitly choose a runtime by setting `runtime.prefer` in your config file.
 
 ### Installation
 
