@@ -21,7 +21,7 @@ CLI is end-to-end Docker-ready via `ContainerRuntime` abstraction.
 
 **Phase 4 COMPLETE** - Runtime-aware GPU abstraction implemented. Docker uses `--gpus all` with `NVIDIA_DRIVER_CAPABILITIES=compute,utility` to avoid EGL/Wayland dependencies. Podman uses CDI or legacy flags with SELinux workarounds.
 
-**Phase 5 IN PROGRESS** - Core refactoring complete. Remaining work: update call sites to pass runtime/manager, additional tests.
+**Phase 5 COMPLETE** - All hardcoded podman subprocess calls refactored to use runtime abstraction. Added `runtime_name` property to ContainerRuntime protocol for streaming operations (image pulls, logs).
 
 ## Architecture Overview
 
@@ -218,10 +218,10 @@ Mock-based tests for unit testing, optional integration tests when Docker availa
 | `airpods/configuration/schema.py` | Update DependenciesConfig model | ✓ Complete |
 | `airpods/cli/common.py` | Runtime-aware remediation messages | ✓ Complete |
 | `airpods/cli/commands/backup.py` | Use runtime abstraction | ✓ Complete |
-| `airpods/cli/commands/start.py` | Use runtime abstraction | In Progress |
-| `airpods/cli/commands/stop.py` | Use runtime abstraction | In Progress |
-| `airpods/cli/commands/clean.py` | Use runtime abstraction | In Progress |
-| `airpods/cli/status_view.py` | Use runtime abstraction | In Progress |
+| `airpods/cli/commands/start.py` | Use runtime abstraction | ✓ Complete |
+| `airpods/cli/commands/stop.py` | Use runtime abstraction | ✓ Complete |
+| `airpods/cli/commands/clean.py` | Use runtime abstraction | ✓ Complete |
+| `airpods/cli/status_view.py` | Use runtime abstraction | ✓ Complete |
 
 ## Estimated Effort
 

@@ -40,6 +40,14 @@ class TestGetRuntime:
         with pytest.raises(ContainerRuntimeError, match="Unknown runtime 'foobar'"):
             get_runtime("foobar")
 
+    def test_runtime_name_property(self):
+        """Test runtime_name property returns correct values."""
+        podman_runtime = get_runtime("podman")
+        assert podman_runtime.runtime_name == "podman"
+
+        docker_runtime = get_runtime("docker")
+        assert docker_runtime.runtime_name == "docker"
+
 
 class TestPodmanRuntime:
     """Test the PodmanRuntime implementation."""

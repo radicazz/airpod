@@ -61,17 +61,23 @@ def test_import_functions_uses_container(
         stdout = "Imported gamma: 1"
         stderr = ""
 
-    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
-        captured["cmd"] = cmd
-        calls.append(cmd)
-        return DummyResult()
+    class MockRuntime:
+        def exec_in_container(self, container, cmd, **kwargs):  # type: ignore[no-untyped-def]
+            import subprocess
 
-    import subprocess
+            # Build the command as runtime would
+            full_cmd = ["podman", "exec", container] + cmd
+            captured["cmd"] = full_cmd
+            calls.append(full_cmd)
+            return DummyResult()
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    mock_runtime = MockRuntime()
 
     imported = plugins.import_plugins_to_webui(
-        plugin_dir, admin_user_id="owner", container_name="custom-container"
+        mock_runtime,
+        plugin_dir,
+        admin_user_id="owner",
+        container_name="custom-container",
     )
 
     assert imported == 1
@@ -128,15 +134,17 @@ def test_resolve_plugin_owner_auto_prefers_admin(
 
     outputs = ["admin-user\n"]
 
-    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
-        calls.append(cmd)
-        return DummyResult(outputs.pop(0) if outputs else "")
+    class MockRuntime:
+        def exec_in_container(self, container, cmd, **kwargs):  # type: ignore[no-untyped-def]
+            full_cmd = ["podman", "exec", container] + cmd
+            calls.append(full_cmd)
+            return DummyResult(outputs.pop(0) if outputs else "")
 
-    import subprocess
+    mock_runtime = MockRuntime()
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    owner = plugins.resolve_plugin_owner_user_id("open-webui-0", mode="auto")
+    owner = plugins.resolve_plugin_owner_user_id(
+        mock_runtime, "open-webui-0", mode="auto"
+    )
     assert owner == "admin-user"
     assert len(calls) == 1
 
@@ -154,14 +162,15 @@ def test_resolve_plugin_owner_auto_creates_default_admin(
     # Outputs: no existing admin, no users exist, create default admin
     outputs = ["", "", "test-admin-id\n"]
 
-    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
-        return DummyResult(outputs.pop(0) if outputs else "")
+    class MockRuntime:
+        def exec_in_container(self, container, cmd, **kwargs):  # type: ignore[no-untyped-def]
+            return DummyResult(outputs.pop(0) if outputs else "")
 
-    import subprocess
+    mock_runtime = MockRuntime()
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    owner = plugins.resolve_plugin_owner_user_id("open-webui-0", mode="auto")
+    owner = plugins.resolve_plugin_owner_user_id(
+        mock_runtime, "open-webui-0", mode="auto"
+    )
     assert owner == "test-admin-id"
 
 
@@ -177,14 +186,15 @@ def test_resolve_plugin_owner_admin_mode_uses_system_when_missing(
 
     outputs = [""]
 
-    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
-        return DummyResult(outputs.pop(0) if outputs else "")
+    class MockRuntime:
+        def exec_in_container(self, container, cmd, **kwargs):  # type: ignore[no-untyped-def]
+            return DummyResult(outputs.pop(0) if outputs else "")
 
-    import subprocess
+    mock_runtime = MockRuntime()
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    owner = plugins.resolve_plugin_owner_user_id("open-webui-0", mode="admin")
+    owner = plugins.resolve_plugin_owner_user_id(
+        mock_runtime, "open-webui-0", mode="admin"
+    )
     assert owner == "system"
 
 

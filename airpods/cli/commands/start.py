@@ -70,8 +70,9 @@ except Exception:
     sys.exit(4)
 """
     try:
-        result = subprocess.run(
-            ["podman", "exec", container_name, "python3", "-c", code.strip()],
+        result = manager.runtime.exec_in_container(
+            container_name,
+            ["python3", "-c", code.strip()],
             capture_output=True,
             text=True,
             timeout=6,
@@ -159,9 +160,10 @@ def _maybe_import_webui_plugins(
     with status_spinner("Auto-importing plugins into Open WebUI"):
         try:
             owner_id = plugins.resolve_plugin_owner_user_id(
-                container_name, cli_config.plugin_owner
+                manager.runtime, container_name, cli_config.plugin_owner
             )
             imported = plugins.import_plugins_to_webui(
+                manager.runtime,
                 plugins_dir,
                 admin_user_id=owner_id,
                 container_name=container_name,
@@ -715,9 +717,10 @@ def _pull_images_with_progress(
     def _pull_one(spec: ServiceSpec, task_id: int) -> None:
         start = time.perf_counter()
         events.put(_PullEvent("start", task_id))
+        runtime_cli = manager.runtime.runtime_name
         try:
             proc = subprocess.Popen(
-                ["podman", "pull", spec.image],
+                [runtime_cli, "pull", spec.image],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

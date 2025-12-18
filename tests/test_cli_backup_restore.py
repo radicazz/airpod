@@ -50,8 +50,8 @@ def mock_services():
 
 
 @pytest.fixture
-def mock_run_podman():
-    with patch("airpods.cli.commands.backup._run_podman") as mock:
+def mock_run_runtime_exec():
+    with patch("airpods.cli.commands.backup._run_runtime_exec") as mock:
         mock.return_value.stdout = json.dumps({"models": []})
         yield mock
 
@@ -71,7 +71,7 @@ def _create_dummy_backup(home: Path) -> Path:
 
 
 def test_backup_creates_archive(
-    runner, mock_state_dirs, mock_podman, mock_run_podman, mock_services
+    runner, mock_state_dirs, mock_podman, mock_run_runtime_exec, mock_services
 ):
     configs = mock_state_dirs["configs"]
     volumes = mock_state_dirs["volumes"]

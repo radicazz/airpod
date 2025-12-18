@@ -13,6 +13,11 @@ class ContainerRuntimeError(RuntimeError):
 class ContainerRuntime(Protocol):
     """Abstract interface for container runtime operations."""
 
+    @property
+    def runtime_name(self) -> str:
+        """Return the runtime name ('podman' or 'docker')."""
+        ...
+
     def ensure_volume(self, name: str) -> bool:
         """Create a volume if it doesn't exist.
 
@@ -147,6 +152,11 @@ class ContainerRuntime(Protocol):
 
 class PodmanRuntime:
     """Podman implementation of the container runtime interface."""
+
+    @property
+    def runtime_name(self) -> str:
+        """Return the runtime name ('podman')."""
+        return "podman"
 
     def ensure_volume(self, name: str) -> bool:
         try:
@@ -291,6 +301,11 @@ class PodmanRuntime:
 
 class DockerRuntime:
     """Docker implementation of the container runtime interface."""
+
+    @property
+    def runtime_name(self) -> str:
+        """Return the runtime name ('docker')."""
+        return "docker"
 
     def ensure_volume(self, name: str) -> bool:
         try:
