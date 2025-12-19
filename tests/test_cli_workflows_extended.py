@@ -549,8 +549,8 @@ def test_list_cmd_with_workflows(runner, tmp_path, monkeypatch):
     monkeypatch.setattr(workflows_module, "comfyui_workflows_dir", fake_workflows_dir)
     result = runner.invoke(app, ["workflows", "list"])
     assert result.exit_code == 0
-    assert "test1.json" in result.stdout
-    assert "test2.json" in result.stdout
+    assert "test1" in result.stdout
+    assert "test2" in result.stdout
 
 
 def test_list_cmd_with_limit(runner, tmp_path, monkeypatch):

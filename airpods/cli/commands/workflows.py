@@ -708,6 +708,10 @@ def list_cmd(
 
     for path in shown:
         rel = path.relative_to(root)
+        # Display name without .json extension
+        display_name = str(rel)
+        if display_name.lower().endswith(".json"):
+            display_name = display_name[:-5]
 
         # Try to load and analyze the workflow
         try:
@@ -716,7 +720,7 @@ def list_cmd(
 
             if not refs:
                 # No models found
-                table.add_row(str(rel), "0", "[dim]—[/]", "[dim]—[/]")
+                table.add_row(display_name, "0", "[dim]—[/]", "[dim]—[/]")
                 continue
 
             # Check how many models are missing
@@ -754,11 +758,11 @@ def list_cmd(
             else:
                 status = f"[error]✗ {missing_count} missing[/]"
 
-            table.add_row(str(rel), str(total), auto_sync, status)
+            table.add_row(display_name, str(total), auto_sync, status)
 
         except Exception as e:
             # If we can't parse the workflow, show basic info
-            table.add_row(str(rel), "?", "[dim]?[/]", f"[dim]error: {e}[/]")
+            table.add_row(display_name, "?", "[dim]?[/]", f"[dim]error: {e}[/]")
 
     console.print(table)
 

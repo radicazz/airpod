@@ -248,14 +248,12 @@ def test_workflows_list_shows_auto_sync_indicator(runner):
     assert result.exit_code == 0
     assert "Auto-sync" in result.stdout
 
-    auto_line = next(
-        line for line in result.stdout.splitlines() if "wf_auto.json" in line
-    )
+    auto_line = next(line for line in result.stdout.splitlines() if "wf_auto" in line)
     assert "✓" in auto_line
     assert "✗ 1 missing" in auto_line
 
     noauto_line = next(
-        line for line in result.stdout.splitlines() if "wf_noauto.json" in line
+        line for line in result.stdout.splitlines() if "wf_noauto" in line
     )
     assert noauto_line.count("✗") >= 2
 
