@@ -262,6 +262,26 @@ def _dedupe_refs(refs: list[ModelRef]) -> list[ModelRef]:
         if any(i.folder for i in items):
             items = [i for i in items if i.folder]
 
+        # When the same filename appears with different folders, prefer the most
+        # authoritative reference (one with URL + folder metadata from embedded data).
+        # Score each reference: URL=2, folder=1, so URL+folder=3 is best.
+        def score_ref(r: ModelRef) -> int:
+            s = 0
+            if r.url:
+                s += 2
+            if r.folder:
+                s += 1
+            return s
+
+        # If all references have folders but point to different destinations,
+        # keep only the best one (highest score, breaking ties by keeping first).
+        if len(items) > 1 and all(i.folder for i in items):
+            folders = {i.folder for i in items}
+            if len(folders) > 1:
+                # Multiple folders for same file - pick the best reference
+                best = max(items, key=lambda r: (score_ref(r), -items.index(r)))
+                items = [best]
+
         by_key: dict[tuple[str, str | None, str | None], ModelRef] = {}
         for ref in items:
             key = (filename, ref.folder, ref.subdir)

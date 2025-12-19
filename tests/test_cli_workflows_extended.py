@@ -308,6 +308,55 @@ class TestDedupeRefs:
         result = _dedupe_refs(refs)
         assert len(result) == 2
 
+    def test_same_filename_different_folders_prefers_url(self):
+        """When same file appears in different folders, prefer the one with URL."""
+        refs = [
+            ModelRef(
+                "clip_vision_g.safetensors",
+                "clip_vision",
+                None,
+                "https://example.com/model",
+                "src1",
+            ),
+            ModelRef("clip_vision_g.safetensors", "clip", None, None, "src2"),
+        ]
+        result = _dedupe_refs(refs)
+        # Should only keep the one with URL (clip_vision folder)
+        assert len(result) == 1
+        assert result[0].folder == "clip_vision"
+        assert result[0].url == "https://example.com/model"
+
+    def test_same_filename_different_folders_no_url(self):
+        """When same file appears in different folders without URLs, keep first one."""
+        refs = [
+            ModelRef("model.safetensors", "checkpoints", None, None, "src1"),
+            ModelRef("model.safetensors", "loras", None, None, "src2"),
+        ]
+        result = _dedupe_refs(refs)
+        # Should only keep one (the first based on scoring)
+        assert len(result) == 1
+        assert result[0].folder in ("checkpoints", "loras")
+
+    def test_same_filename_different_folders_both_have_url(self):
+        """When same file appears in different folders with URLs, prefer first one with URL."""
+        refs = [
+            ModelRef(
+                "model.safetensors",
+                "checkpoints",
+                None,
+                "https://example.com/1",
+                "src1",
+            ),
+            ModelRef(
+                "model.safetensors", "loras", None, "https://example.com/2", "src2"
+            ),
+        ]
+        result = _dedupe_refs(refs)
+        # Should keep first one with URL
+        assert len(result) == 1
+        assert result[0].folder == "checkpoints"
+        assert result[0].url == "https://example.com/1"
+
 
 class TestLoadMapping:
     def test_load_json_mapping(self, tmp_path):
