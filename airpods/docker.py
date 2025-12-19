@@ -13,7 +13,10 @@ class DockerError(RuntimeError):
 
 
 def _run(
-    args: List[str], capture: bool = True, check: bool = True
+    args: List[str],
+    capture: bool = True,
+    check: bool = True,
+    timeout: Optional[float] = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a docker command and return the completed process.
 
@@ -27,6 +30,7 @@ def _run(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=check,
+        timeout=timeout,
     )
     return proc
 

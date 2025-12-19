@@ -99,7 +99,7 @@ DEFAULT_CONFIG_DICT = {
                 },
                 "custom_nodes": {
                     "source": "bind://comfyui_custom_nodes",
-                    "target": "/root/ComfyUI/custom_nodes",
+                    "target": "/basedir/custom_nodes",
                 },
             },
             "gpu": {"enabled": True, "force_cpu": False},
