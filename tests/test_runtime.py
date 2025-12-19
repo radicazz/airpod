@@ -6,6 +6,7 @@ import pytest
 
 from airpods.runtime import (
     ContainerRuntimeError,
+    DockerRuntime,
     PodmanRuntime,
     get_runtime,
 )
@@ -14,33 +15,71 @@ from airpods.runtime import (
 class TestGetRuntime:
     """Test the runtime factory function."""
 
-    def test_get_runtime_none_returns_podman(self):
-        """get_runtime(None) should return PodmanRuntime."""
+    def test_get_runtime_none_auto_detects(self, monkeypatch):
+        """get_runtime(None) should auto-detect available runtime."""
+
+        # Mock shutil.which to simulate podman being available
+        def mock_which(cmd):
+            return "/usr/bin/podman" if cmd == "podman" else None
+
+        monkeypatch.setattr("shutil.which", mock_which)
         runtime = get_runtime(None)
         assert isinstance(runtime, PodmanRuntime)
 
-    def test_get_runtime_auto_returns_podman(self):
-        """get_runtime('auto') should return PodmanRuntime."""
+    def test_get_runtime_auto_prefers_podman(self, monkeypatch):
+        """get_runtime('auto') should prefer podman when both are available."""
+
+        # Mock both runtimes as available
+        def mock_which(cmd):
+            return f"/usr/bin/{cmd}" if cmd in ("podman", "docker") else None
+
+        monkeypatch.setattr("shutil.which", mock_which)
         runtime = get_runtime("auto")
         assert isinstance(runtime, PodmanRuntime)
+
+    def test_get_runtime_auto_falls_back_to_docker(self, monkeypatch):
+        """get_runtime('auto') should use docker if podman not available."""
+
+        # Mock only docker as available
+        def mock_which(cmd):
+            return "/usr/bin/docker" if cmd == "docker" else None
+
+        monkeypatch.setattr("shutil.which", mock_which)
+        runtime = get_runtime("auto")
+        assert isinstance(runtime, DockerRuntime)
+
+    def test_get_runtime_auto_raises_if_none_available(self, monkeypatch):
+        """get_runtime('auto') should raise error if neither runtime available."""
+        # Mock no runtimes available
+        monkeypatch.setattr("shutil.which", lambda cmd: None)
+        with pytest.raises(
+            ContainerRuntimeError,
+            match="No container runtime found. Please install either Podman or Docker.",
+        ):
+            get_runtime("auto")
 
     def test_get_runtime_podman_returns_podman(self):
         """get_runtime('podman') should return PodmanRuntime."""
         runtime = get_runtime("podman")
         assert isinstance(runtime, PodmanRuntime)
 
-    def test_get_runtime_docker_raises_error(self):
-        """get_runtime('docker') should raise ContainerRuntimeError."""
-        with pytest.raises(
-            ContainerRuntimeError,
-            match="Docker is not supported yet.*podman.*auto",
-        ):
-            get_runtime("docker")
+    def test_get_runtime_docker_returns_docker(self):
+        """get_runtime('docker') should return DockerRuntime."""
+        runtime = get_runtime("docker")
+        assert isinstance(runtime, DockerRuntime)
 
     def test_get_runtime_unknown_raises_error(self):
         """get_runtime with unknown value should raise ContainerRuntimeError."""
         with pytest.raises(ContainerRuntimeError, match="Unknown runtime 'foobar'"):
             get_runtime("foobar")
+
+    def test_runtime_name_property(self):
+        """Test runtime_name property returns correct values."""
+        podman_runtime = get_runtime("podman")
+        assert podman_runtime.runtime_name == "podman"
+
+        docker_runtime = get_runtime("docker")
+        assert docker_runtime.runtime_name == "docker"
 
 
 class TestPodmanRuntime:
@@ -66,6 +105,45 @@ class TestPodmanRuntime:
             "pod_status",
             "pod_inspect",
             "stream_logs",
+            "exec_in_container",
+            "copy_to_container",
+            "copy_from_container",
+            "container_inspect",
+            "list_containers",
+        ]
+        for method in required_methods:
+            assert hasattr(runtime, method), f"Missing method: {method}"
+            assert callable(getattr(runtime, method))
+
+
+class TestDockerRuntime:
+    """Test the DockerRuntime implementation."""
+
+    def test_docker_runtime_instantiates(self):
+        """DockerRuntime should instantiate without errors."""
+        runtime = DockerRuntime()
+        assert runtime is not None
+
+    def test_docker_runtime_has_required_methods(self):
+        """DockerRuntime should have all required protocol methods."""
+        runtime = DockerRuntime()
+        required_methods = [
+            "ensure_volume",
+            "pull_image",
+            "ensure_pod",
+            "run_container",
+            "container_exists",
+            "pod_exists",
+            "stop_pod",
+            "remove_pod",
+            "pod_status",
+            "pod_inspect",
+            "stream_logs",
+            "exec_in_container",
+            "copy_to_container",
+            "copy_from_container",
+            "container_inspect",
+            "list_containers",
         ]
         for method in required_methods:
             assert hasattr(runtime, method), f"Missing method: {method}"

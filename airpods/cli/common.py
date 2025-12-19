@@ -11,7 +11,12 @@ import airpods.config as config_module
 from airpods.configuration import get_config, reload_config
 from airpods.configuration.schema import CLIConfig
 from airpods.logging import console
-from airpods.runtime import ContainerRuntimeError, get_runtime
+from airpods.runtime import (
+    ContainerRuntimeError,
+    get_runtime,
+    PodmanRuntime,
+    DockerRuntime,
+)
 from airpods.services import (
     ServiceManager,
     ServiceSpec,
@@ -54,15 +59,27 @@ def _apply_cli_config(config) -> None:
     DEFAULT_STARTUP_TIMEOUT = _CONFIG.cli.startup_timeout
     DEFAULT_STARTUP_CHECK_INTERVAL = _CONFIG.cli.startup_check_interval
 
-    # Resolve GPU device flag (auto-detect CDI if "auto")
-    resolved_gpu_flag = gpu_utils.get_gpu_device_flag(_CONFIG.runtime.gpu_device_flag)
+    # Compute runtime-specific dependencies and GPU flags
+    if isinstance(_RUNTIME, PodmanRuntime):
+        runtime_name = "podman"
+    elif isinstance(_RUNTIME, DockerRuntime):
+        runtime_name = "docker"
+    else:
+        runtime_name = "podman"  # fallback for "auto"
+
+    # Resolve GPU device flag (runtime-aware)
+    resolved_gpu_flag = gpu_utils.get_gpu_device_flag(
+        runtime_name, _CONFIG.runtime.gpu_device_flag
+    )
+    runtime_deps = _CONFIG.dependencies.runtime_deps.get(runtime_name, [])
+    required_dependencies = _CONFIG.dependencies.required + runtime_deps
 
     _MANAGER = ServiceManager(
         config_module.REGISTRY,
         _RUNTIME,
         restart_policy=_CONFIG.runtime.restart_policy,
         gpu_device_flag=resolved_gpu_flag,
-        required_dependencies=_CONFIG.dependencies.required,
+        required_dependencies=required_dependencies,
         optional_dependencies=_CONFIG.dependencies.optional,
         skip_dependency_checks=_CONFIG.dependencies.skip_checks,
     )
@@ -73,6 +90,8 @@ _apply_cli_config(get_config())
 DOCTOR_REMEDIATIONS = {
     "podman": "Install Podman: https://podman.io/docs/installation",
     "podman-compose": "Install podman-compose (often via your package manager).",
+    "docker": "Install Docker: https://docs.docker.com/get-docker/",
+    "docker-compose": "Install Docker Compose: https://docs.docker.com/compose/install/",
     "uv": "Install uv: https://github.com/astral-sh/uv",
 }
 
@@ -115,13 +134,18 @@ def resolve_services(names: Optional[list[str]]) -> list[ServiceSpec]:
         raise typer.BadParameter(str(exc)) from exc
 
 
-def ensure_podman_available() -> None:
-    """Ensure Podman is available before running commands."""
+def ensure_runtime_available() -> None:
+    """Ensure container runtime is available before running commands."""
     try:
-        manager.ensure_podman()
+        manager.ensure_runtime()
     except ContainerRuntimeError as exc:  # pragma: no cover - interacts with system
         console.print(f"[error]{exc}[/]")
         raise typer.Exit(code=1)
+
+
+def ensure_podman_available() -> None:
+    """Backwards-compatible alias for older call sites/tests."""
+    ensure_runtime_available()
 
 
 def print_version() -> None:

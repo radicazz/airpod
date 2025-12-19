@@ -108,7 +108,7 @@ Available variables:
 version = "1.0"
 
 [runtime]
-prefer = "auto"  # auto, podman, docker (docker not yet supported)
+prefer = "auto"  # auto, podman, docker
 host_gateway = "auto"
 network_name = "airpods_network"
 gpu_device_flag = "auto"
@@ -205,12 +205,26 @@ OLLAMA_BASE_URL = "http://ollama:11434"  # prefer aliases; host gateway only for
 
 ## Runtime Support
 
-**Podman** (`runtime.prefer = "auto"` or `"podman"`):
-- Fully supported and recommended
-- Default container runtime for airpods
-- Supports GPU passthrough and pod management
+Airpods supports both Podman and Docker as interchangeable container runtimes.
+
+**Auto-detection** (`runtime.prefer = "auto"`):
+- Automatically detects available runtime
+- Prefers Podman when both are installed
+- Falls back to Docker if Podman is unavailable
+- Default and recommended setting
+
+**Podman** (`runtime.prefer = "podman"`):
+- Fully supported
+- Preferred runtime for airpods
+- Native pod management
+- Rootless container support
+- GPU passthrough via CDI or legacy flags
 
 **Docker** (`runtime.prefer = "docker"`):
-- Not yet supported in this release
-- Setting this value will result in a clear error message: "Docker is not supported yet. Please set runtime.prefer back to 'podman' or 'auto' and try again."
-- Docker support is planned for a future release
+- Fully supported
+- Alternative runtime when Podman unavailable
+- Logical pod grouping with host networking
+- GPU passthrough via `--gpus` flag
+- Rootless mode supported with additional setup
+
+All commands work identically regardless of runtime. Use `airpods doctor` to check which runtime is active.

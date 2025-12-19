@@ -175,13 +175,20 @@ class ServiceManager:
             checks=checks, gpu_available=gpu_available, gpu_detail=gpu_detail
         )
 
-    def ensure_podman(self) -> None:
-        """Verify podman is installed and available."""
+    def ensure_runtime(self) -> None:
+        """Verify runtime dependencies are installed and available."""
         if self.skip_dependency_checks:
             return
         report = self.report_environment()
-        if "podman" in report.missing:
-            raise ContainerRuntimeError("podman is required; install it and retry.")
+        if report.missing:
+            raise ContainerRuntimeError(
+                f"Missing runtime dependencies: {', '.join(report.missing)}. "
+                "Install them and retry."
+            )
+
+    def ensure_podman(self) -> None:
+        """Backwards-compatible alias for older call sites/tests."""
+        self.ensure_runtime()
 
     # ----------------------------------------------------------------------------------
     # Pod + container orchestration

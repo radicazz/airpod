@@ -1,7 +1,7 @@
 # Agents & Plan
 
 ## Intent
-Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via Podman. Services are configurable via TOML files with template support. Services: Ollama (GGUF-capable), Open WebUI wired to Ollama, and ComfyUI (using yanwk/comfyui-boot community image; future plan to fork and build custom).
+Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via container runtimes (Podman or Docker). Services are configurable via TOML files with template support. Services: Ollama (GGUF-capable), Open WebUI wired to Ollama, and ComfyUI (using yanwk/comfyui-boot community image; future plan to fork and build custom).
 
 ## Command Surface
 - Global options: `-v/--version` prints the CLI version; `-h/--help` shows the custom help view plus alias table.
@@ -45,23 +45,28 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 ## Architecture Notes
 - CLI package layout:
   - `airpods/cli/__init__.py` – creates the Typer app, registers commands, exposes legacy compatibility helpers.
-  - `airpods/cli/common.py` – shared constants, service manager, and Podman/dependency helpers.
+  - `airpods/cli/common.py` – shared constants, service manager, and runtime/dependency helpers.
   - `airpods/cli/help.py` – Rich-powered help/alias rendering tables used by the root callback.
   - `airpods/cli/status_view.py` – status table + health probing utilities.
-  - `airpods/cli/commands/` – individual command modules (`backup`, `clean`, `config`, `doctor`, `logs`, `models`, `start`, `status`, `stop`) each registering via `commands.__init__.register`.
+  - `airpods/cli/commands/` – individual command modules (`backup`, `clean`, `config`, `doctor`, `logs`, `models`, `start`, `status`, `stop`, `workflows`) each registering via `commands.__init__.register`.
   - `airpods/cli/type_defs.py` – shared Typer command mapping type alias.
 - Configuration system:
   - `airpods/configuration/` – Pydantic-based config schema, loader, template resolver, and error types.
-  - `airpods/configuration/schema.py` – ServiceConfig, RuntimeConfig, CLIConfig, DependenciesConfig models (CLIConfig includes `startup_timeout`/`startup_check_interval` knobs used by `start`).
+  - `airpods/configuration/schema.py` – ServiceConfig, RuntimeConfig, CLIConfig, DependenciesConfig models. RuntimeConfig includes `prefer` field ("auto", "podman", "docker") for runtime selection. CLIConfig includes `startup_timeout`/`startup_check_interval` knobs used by `start`.
   - `airpods/configuration/defaults.py` – Built-in default configuration dictionary.
   - `airpods/configuration/loader.py` – Config file discovery, TOML loading, merging, caching.
   - `airpods/configuration/resolver.py` – Template variable resolution (`{{runtime.host_gateway}}`, `{{services.ollama.ports.0.host}}`).
   - Config priority: `$AIRPODS_CONFIG` → `$AIRPODS_HOME/configs/config.toml` → `$AIRPODS_HOME/config.toml` (legacy) → `<repo_root>/configs/config.toml` → `<repo_root>/config.toml` (legacy) → `$XDG_CONFIG_HOME/airpods/configs/config.toml` → `$XDG_CONFIG_HOME/airpods/config.toml` (legacy) → `~/.config/airpods/configs/config.toml` → `~/.config/airpods/config.toml` (legacy) → defaults.
   - Whichever directory provides the active config is treated as `$AIRPODS_HOME`; `configs/`, `volumes/`, and secrets are all created there so runtime assets stay grouped together regardless of which item in the priority list wins.
-- Supporting modules: `airpods/podman.py` (subprocess wrapper), `airpods/system.py` (env checks, GPU detection), `airpods/config.py` (service specs from config), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `airpods/paths.py` (repo root detection), `airpods/state.py` (state directory management), `podcli` (uv/python wrapper script).
+- Runtime abstraction:
+  - `airpods/runtime.py` – Defines `ContainerRuntime` protocol and implements `PodmanRuntime` and `DockerRuntime` adapters. The `get_runtime(prefer)` factory intelligently selects the runtime based on config (`prefer="auto"` auto-detects, preferring Podman; `prefer="podman"` or `prefer="docker"` explicitly selects).
+  - `airpods/podman.py` – Podman subprocess wrapper with full API (volumes, images, pods, containers, exec, logs).
+  - `airpods/docker.py` – Docker subprocess wrapper mirroring Podman API. Docker's pod abstraction is a logical grouping with host networking.
+  - All CLI commands route through `ServiceManager.runtime` for container operations, ensuring runtime-agnostic behavior.
+- Supporting modules: `airpods/system.py` (env checks), `airpods/gpu.py` (runtime-aware GPU detection with separate flags for Docker/Podman), `airpods/config.py` (service specs from config), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `airpods/paths.py` (repo root detection), `airpods/state.py` (state directory management), `podcli` (uv/python wrapper script).
 - Pod specs dynamically generated from configuration. Service metadata includes `needs_webui_secret` flag for automatic secret injection. Easy to extend services via config files.
-- All pods use host networking (`--network host`) for simplicity and maximum compatibility. Services communicate via `localhost:port`.
-- Errors surfaced with clear remediation (install Podman, start podman machine, check GPU drivers).
+- All pods use host networking (`--network host`) for simplicity and maximum compatibility. Services communicate via `localhost:port`. For Docker, "pods" are logical groupings tracked by naming convention; for Podman, they are actual pod resources.
+- Errors surfaced with clear remediation (install runtime, start podman machine, check GPU drivers, etc.).
 
 ## Data & Images
 - Volumes: `airpods_ollama_data`, `airpods_webui_data`, `airpods_comfyui_data`, and `comfyui_custom_nodes` are bind-mounted under `$AIRPODS_HOME/volumes/` (e.g., `$AIRPODS_HOME/volumes/airpods_ollama_data`), while the ComfyUI workspace bind (`bind://comfyui/workspace`) lives at `$AIRPODS_HOME/volumes/comfyui/workspace`.

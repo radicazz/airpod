@@ -288,9 +288,9 @@ def search_huggingface_models(query: str, limit: int = 5) -> list[dict[str, Any]
                     {
                         "repo_id": model.id,
                         "author": repo_parts[0] if len(repo_parts) > 1 else "unknown",
-                        "model_name": repo_parts[1]
-                        if len(repo_parts) > 1
-                        else repo_parts[0],
+                        "model_name": (
+                            repo_parts[1] if len(repo_parts) > 1 else repo_parts[0]
+                        ),
                         "downloads": getattr(model, "downloads", 0),
                         "likes": getattr(model, "likes", 0),
                     }
@@ -409,6 +409,7 @@ def pull_from_huggingface(
     model_name: str,
     port: int = 11434,
     progress_callback: Optional[Callable[[str, int, int], None]] = None,
+    runtime=None,
 ) -> bool:
     """
     Download a GGUF file from HuggingFace and import it into Ollama.
@@ -420,6 +421,7 @@ def pull_from_huggingface(
         port: Ollama API port (default: 11434)
         progress_callback: Optional callback called with (phase, current, total)
                           phase is "download" or "import"
+        runtime: Container runtime instance (required if service is running)
 
     Returns:
         True if import succeeded
@@ -457,6 +459,12 @@ def pull_from_huggingface(
                 "Ollama service not available. Start with 'airpods start ollama'"
             )
 
+        # Require runtime for container operations
+        if runtime is None:
+            raise OllamaAPIError(
+                "Runtime instance required for importing models into running containers"
+            )
+
         if progress_callback:
             progress_callback("import", 0, 100)
 
@@ -467,45 +475,38 @@ def pull_from_huggingface(
 
         # Copy GGUF file into the container
         try:
-            subprocess.run(
-                ["podman", "cp", local_path, f"{container}:{remote_model_path}"],
-                check=True,
-                capture_output=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            stderr = exc.stderr.decode() if exc.stderr else ""
+            runtime.copy_to_container(local_path, container, remote_model_path)
+        except Exception as exc:
             raise OllamaAPIError(
-                f"Failed to copy model into container '{container}': {stderr or exc}"
+                f"Failed to copy model into container '{container}': {exc}"
             ) from exc
 
         # Create the model inside the container, piping the Modelfile via stdin
-        result = subprocess.run(
-            [
-                "podman",
-                "exec",
-                "-i",
+        try:
+            result = runtime.exec_in_container(
                 container,
-                "ollama",
-                "create",
-                model_name,
-                "-f",
-                "/dev/stdin",
-            ],
-            input=modelfile_content.encode(),
-            capture_output=True,
-            check=False,
-        )
+                ["ollama", "create", model_name, "-f", "/dev/stdin"],
+                input=modelfile_content.encode(),
+                capture_output=True,
+                check=False,
+            )
+        except Exception as exc:
+            raise OllamaAPIError(f"Failed to execute ollama create: {exc}") from exc
 
         if result.returncode != 0:
             stderr = result.stderr.decode() if result.stderr else "Unknown error"
             raise OllamaAPIError(f"Failed to import model: {stderr}")
 
         # Try to clean up the copied file; ignore failures
-        subprocess.run(
-            ["podman", "exec", container, "rm", "-f", remote_model_path],
-            check=False,
-            capture_output=True,
-        )
+        try:
+            runtime.exec_in_container(
+                container,
+                ["rm", "-f", remote_model_path],
+                check=False,
+                capture_output=True,
+            )
+        except Exception:
+            pass  # Cleanup failure is not critical
 
         if progress_callback:
             progress_callback("import", 100, 100)

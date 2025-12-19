@@ -15,7 +15,7 @@ from .common import (
     DEFAULT_LOG_LINES,
     DEFAULT_PING_TIMEOUT,
     DEFAULT_STOP_TIMEOUT,
-    ensure_podman_available,
+    ensure_runtime_available,
     manager as _manager,
     print_version,
     resolve_services,
@@ -83,7 +83,7 @@ def main() -> None:
 # Backwards compatibility exports for legacy tests/importers.
 manager = _manager
 _resolve_services = resolve_services
-_ensure_podman_available = ensure_podman_available
+_ensure_runtime_available = ensure_runtime_available
 _render_status = render_status
 time = _time
 

@@ -27,7 +27,7 @@ from airpods.services import ServiceSpec
 
 from ..common import (
     COMMAND_CONTEXT,
-    ensure_podman_available,
+    ensure_runtime_available,
     format_transfer_label,
     is_verbose_mode,
     manager,
@@ -42,6 +42,8 @@ from ..completions import service_name_completion
 from ..help import command_help_option, maybe_show_command_help
 from ..status_view import check_service_health, collect_host_ports
 from ..type_defs import CommandMap
+
+ensure_podman_available = ensure_runtime_available
 
 
 def _webui_db_ready(container_name: str) -> bool:
@@ -68,8 +70,9 @@ except Exception:
     sys.exit(4)
 """
     try:
-        result = subprocess.run(
-            ["podman", "exec", container_name, "python3", "-c", code.strip()],
+        result = manager.runtime.exec_in_container(
+            container_name,
+            ["python3", "-c", code.strip()],
             capture_output=True,
             text=True,
             timeout=6,
@@ -157,9 +160,10 @@ def _maybe_import_webui_plugins(
     with status_spinner("Auto-importing plugins into Open WebUI"):
         try:
             owner_id = plugins.resolve_plugin_owner_user_id(
-                container_name, cli_config.plugin_owner
+                manager.runtime, container_name, cli_config.plugin_owner
             )
             imported = plugins.import_plugins_to_webui(
+                manager.runtime,
                 plugins_dir,
                 admin_user_id=owner_id,
                 container_name=container_name,
@@ -247,7 +251,7 @@ def register(app: typer.Typer) -> CommandMap:
         print_config_info(config_path, verbose=verbose)
 
         specs = resolve_services(service)
-        ensure_podman_available()
+        ensure_runtime_available()
 
         # Enable CUDA logging during startup flows
         import airpods.config as config_module
@@ -713,9 +717,10 @@ def _pull_images_with_progress(
     def _pull_one(spec: ServiceSpec, task_id: int) -> None:
         start = time.perf_counter()
         events.put(_PullEvent("start", task_id))
+        runtime_cli = manager.runtime.runtime_name
         try:
             proc = subprocess.Popen(
-                ["podman", "pull", spec.image],
+                [runtime_cli, "pull", spec.image],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

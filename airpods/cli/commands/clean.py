@@ -20,12 +20,14 @@ from airpods.state import configs_dir, volumes_dir
 from ..common import (
     COMMAND_CONTEXT,
     DEFAULT_STOP_TIMEOUT,
-    ensure_podman_available,
+    ensure_runtime_available,
     manager,
     resolve_services,
 )
 from ..help import command_help_option, maybe_show_command_help, exit_with_help
 from ..type_defs import CommandMap
+
+ensure_podman_available = ensure_runtime_available
 
 
 class CleanupPlan:
@@ -317,7 +319,7 @@ def register(app: typer.Typer) -> CommandMap:
                 code=1,
             )
 
-        ensure_podman_available()
+        ensure_runtime_available()
 
         plan = _collect_cleanup_targets(
             pods=pods,

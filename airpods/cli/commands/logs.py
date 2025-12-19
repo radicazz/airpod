@@ -12,7 +12,7 @@ from airpods.logging import console
 from ..common import (
     COMMAND_CONTEXT,
     DEFAULT_LOG_LINES,
-    ensure_podman_available,
+    ensure_runtime_available,
     manager,
     resolve_services,
 )
@@ -42,7 +42,7 @@ def register(app: typer.Typer) -> CommandMap:
         """Show pod logs."""
         maybe_show_command_help(ctx, help_)
         specs = resolve_services(service)
-        ensure_podman_available()
+        ensure_runtime_available()
         if follow and len(specs) > 1:
             console.print(
                 "[warn]follow with multiple services will stream sequentially; Ctrl+C to stop.[/]"
@@ -57,7 +57,7 @@ def register(app: typer.Typer) -> CommandMap:
             )
             if code != 0:
                 console.print(
-                    f"[warn]podman logs exited with code {code} for {spec.container}[/]"
+                    f"[warn]container logs exited with code {code} for {spec.container}[/]"
                 )
 
     return {"logs": logs}

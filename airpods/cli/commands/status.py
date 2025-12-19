@@ -10,11 +10,13 @@ import typer
 
 from airpods.logging import console
 
-from ..common import COMMAND_CONTEXT, ensure_podman_available, resolve_services
+from ..common import COMMAND_CONTEXT, ensure_runtime_available, resolve_services
 from ..completions import service_name_completion
 from ..help import command_help_option, maybe_show_command_help
 from ..status_view import render_status
 from ..type_defs import CommandMap
+
+ensure_podman_available = ensure_runtime_available
 
 
 def register(app: typer.Typer) -> CommandMap:
@@ -34,7 +36,7 @@ def register(app: typer.Typer) -> CommandMap:
         """Show pod status."""
         maybe_show_command_help(ctx, help_)
         specs = resolve_services(service)
-        ensure_podman_available()
+        ensure_runtime_available()
         if watch is not None and watch <= 0:
             raise typer.BadParameter("watch interval must be positive.")
 

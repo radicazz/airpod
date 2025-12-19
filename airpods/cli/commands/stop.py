@@ -12,7 +12,7 @@ from airpods.logging import console
 from ..common import (
     COMMAND_CONTEXT,
     DEFAULT_STOP_TIMEOUT,
-    ensure_podman_available,
+    ensure_runtime_available,
     is_verbose_mode,
     manager,
     resolve_services,
@@ -20,6 +20,8 @@ from ..common import (
 from ..completions import service_name_completion
 from ..help import command_help_option, maybe_show_command_help
 from ..type_defs import CommandMap
+
+ensure_podman_available = ensure_runtime_available
 
 
 def register(app: typer.Typer) -> CommandMap:
@@ -42,7 +44,7 @@ def register(app: typer.Typer) -> CommandMap:
         """Stop pods for specified services; confirms before destructive removal."""
         maybe_show_command_help(ctx, help_)
         specs = resolve_services(service)
-        ensure_podman_available()
+        ensure_runtime_available()
 
         # Check verbose mode from context
         verbose = is_verbose_mode(ctx)
@@ -51,28 +53,18 @@ def register(app: typer.Typer) -> CommandMap:
         uptimes: dict[str, str] = {}
         if verbose:
             for spec in specs:
-                try:
-                    import subprocess
+                inspect = manager.runtime.container_inspect(spec.container)
+                if (
+                    inspect
+                    and "State" in inspect
+                    and "StartedAt" in inspect["State"]
+                    and inspect["State"]["StartedAt"]
+                ):
+                    from airpods.cli.status_view import _format_uptime
 
-                    result = subprocess.run(
-                        [
-                            "podman",
-                            "container",
-                            "inspect",
-                            spec.container,
-                            "--format",
-                            "{{.State.StartedAt}}",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                    if result.returncode == 0 and result.stdout.strip():
-                        from airpods.cli.status_view import _format_uptime
-
-                        started_at = result.stdout.strip()
-                        uptimes[spec.name] = _format_uptime(started_at)
-                except Exception:
+                    started_at = inspect["State"]["StartedAt"]
+                    uptimes[spec.name] = _format_uptime(started_at)
+                else:
                     uptimes[spec.name] = "-"
 
         if remove and specs:
