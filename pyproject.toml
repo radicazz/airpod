@@ -1,6 +1,6 @@
 [project]
 name = "airpods"
-version = "0.21.1"
+version = "0.21.2"
 description = "Rich, user-friendly CLI for orchestrating local AI services with Podman."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
@@ -58,11 +58,13 @@ packages = ["airpods"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "plugins/open-webui" = "plugins/open-webui"
+"plugins/comfyui" = "plugins/comfyui"
 
 [tool.hatch.build.targets.sdist]
 include = [
   "airpods",
   "plugins/open-webui",
+  "plugins/comfyui",
   "tests",
   "README.md",
   "LICENSE",
