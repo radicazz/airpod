@@ -133,6 +133,7 @@ class ServiceConfig(BaseModel):
     command_args: Dict[str, CommandArgValue] = Field(default_factory=dict)
     entrypoint_override: Optional[List[str]] = None
     default_model: Optional[str] = None
+    default_model_url: Optional[str] = None
 
     model_config = ConfigDict(extra="ignore")
 

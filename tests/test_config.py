@@ -119,7 +119,7 @@ def test_llamacpp_command_args_rendering():
     config = AirpodsConfig.from_dict(config_dict)
     spec = _service_spec_from_config("llamacpp", config.services["llamacpp"], config)
 
-    assert spec.entrypoint == "llama-server"
+    assert spec.entrypoint == "/app/llama-server"
     assert spec.command == [
         "--model",
         "/models/foo.gguf",

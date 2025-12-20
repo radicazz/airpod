@@ -98,4 +98,4 @@ def test_llamacpp_command_args_template_resolution():
     resolved = resolve_templates(config)
 
     model_arg = resolved.services["llamacpp"].command_args.get("model")
-    assert model_arg == "/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+    assert model_arg == "/models/granite-4.0-h-1b-Q4_K_M.gguf"

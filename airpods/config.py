@@ -96,6 +96,10 @@ def _resolve_cuda_image(
 
 
 def _derive_llamacpp_cpu_image(image: str) -> str:
+    if image.startswith("ghcr.io/ggerganov/llama.cpp"):
+        image = image.replace(
+            "ghcr.io/ggerganov/llama.cpp", "ghcr.io/ggml-org/llama.cpp", 1
+        )
     if "server-cuda" in image:
         return image.replace("server-cuda", "server")
     if image.endswith("-cuda"):
@@ -104,6 +108,10 @@ def _derive_llamacpp_cpu_image(image: str) -> str:
 
 
 def _derive_llamacpp_gpu_image(image: str) -> str:
+    if image.startswith("ghcr.io/ggerganov/llama.cpp"):
+        image = image.replace(
+            "ghcr.io/ggerganov/llama.cpp", "ghcr.io/ggml-org/llama.cpp", 1
+        )
     if "server-cuda" in image or image.endswith("-cuda"):
         return image
     if ":server" in image:
@@ -117,7 +125,14 @@ def _resolve_service_image(
     if name == "comfyui":
         return _resolve_cuda_image(name, service, config), None
     if name == "llamacpp":
+        original_image = service.image
         cpu_image = _derive_llamacpp_cpu_image(service.image)
+        if original_image != cpu_image and original_image.startswith(
+            "ghcr.io/ggerganov/llama.cpp"
+        ):
+            console.print(
+                "[info]llamacpp: switching image to ghcr.io/ggml-org/llama.cpp (updated registry)[/]"
+            )
         use_gpu = (
             service.gpu.enabled
             and not service.gpu.force_cpu
@@ -247,7 +262,7 @@ def _service_spec_from_config(
 
     if name == "llamacpp":
         if entrypoint is None:
-            entrypoint = "llama-server"
+            entrypoint = "/app/llama-server"
         command = command_args or None
     elif entrypoint is not None or command_args:
         command = command_args or None

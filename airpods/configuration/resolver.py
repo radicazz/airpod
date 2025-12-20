@@ -54,6 +54,14 @@ def resolve_templates(config: AirpodsConfig) -> AirpodsConfig:
                 "default_model"
             ]
 
+        default_model_url = service_data.get("default_model_url")
+        if isinstance(default_model_url, str) and "{{" in default_model_url:
+            service_data["default_model_url"] = _resolve_string(
+                default_model_url,
+                context,
+                location=f"services.{service_name}.default_model_url",
+            )
+
         command_args = service_data.get("command_args", {})
         if isinstance(command_args, dict):
             for key, value in list(command_args.items()):
