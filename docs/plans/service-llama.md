@@ -1,111 +1,170 @@
 # docs/plans/service-llama
 
-**STATUS:** PLANNED - NOT IMPLEMENTED (requires `command_args` schema extension)
+**STATUS:** PLANNED - NOT IMPLEMENTED
 
 ## Purpose
 
-- Add llama.cpp as an optional, first-class service in airpods alongside Ollama, Open WebUI, ComfyUI, and supporting components.
-- Use llama.cpp to provide a flexible, local LLM runtime with GGUF models, OpenAI-style HTTP APIs, and both CPU and GPU execution paths.
-- Keep airpods focused on orchestration: containers, pods, volumes, networks, and configuration; llama.cpp remains the model runtime, not a replacement UI.
+- Add llama.cpp as an optional, first-class service in airpods alongside Ollama, Open WebUI, and ComfyUI.
+- Use llama.cpp as the dedicated GGUF runtime (OpenAI-style HTTP APIs, CPU/GPU execution) so ComfyUI can consume LLMs via HTTP instead of Python bindings.
+- Keep airpods focused on orchestration: containers, pods, volumes, networks, and configuration; llama.cpp remains the model runtime.
 
 ## Role In The Stack
 
-- Runs as an additional Podman-managed service that airpods can `start`, `stop`, `status`, and `logs` (with `start --pre-fetch` available for warming images), just like Ollama and Open WebUI.
-- Exposes an OpenAI-compatible HTTP API (via `llama-server`) that Open WebUI can use as a backend through its OpenAI connection settings.
-- Optionally exposes the native llama.cpp WebUI (SvelteKit-based) for lightweight, local-only chat and model management.
-- Stores GGUF models on a dedicated volume so they persist across container restarts and can be reused by different llama.cpp instances.
-- Model artifacts are intended to be shared read-only with other services (e.g., Open WebUI plugins, ComfyUI consumers) via mounts or download links; by default, keep the llama model volume private and only expose what’s needed to avoid accidental mutation.
+- Runs as an additional service that airpods can `start`, `stop`, `status`, and `logs`, just like Ollama and Open WebUI.
+- Exposes an OpenAI-compatible HTTP API (via `llama-server`) for:
+  - Open WebUI (OpenAI backend config)
+  - ComfyUI custom nodes (HTTP client)
+- Replaces the need to embed `llama-cpp-python` into the ComfyUI container image, reducing image complexity and GPU build risk.
+- Stores GGUF models in a dedicated volume (`airpods_models/gguf`) that is not shared with Ollama’s internal storage format.
 
-## Capabilities (From Existing Plan)
+## Concrete Service Decisions (Implementation-Ready)
 
-- Uses GGUF model format with quantization (Q2–Q8 / Q2_K, Q4_K_M, Q5_K_M, Q8_0) to reduce memory usage substantially at modest accuracy cost.
-- Provides an OpenAI-style HTTP interface via `llama-server`, including `/v1/chat/completions`, `/v1/completions`, and `/v1/embeddings`.
-- Supports CPU-first execution and optional GPU acceleration depending on image variant and flags.
-- Offers tooling around:
-  - Interactive CLI chat (`llama-cli`).
-  - HTTP server mode (`llama-server`).
-  - Conversion and quantization utilities for GGUF models.
-  - Native WebUI (SvelteKit) for chat, document uploads, vision-capable models, parameter tuning, and model switching (as described in the existing plan).
+- **Service name**: `llamacpp`
+- **Image defaults** (configurable):
+  - CPU: `ghcr.io/ggerganov/llama.cpp:server`
+  - GPU (CUDA): `ghcr.io/ggerganov/llama.cpp:server-cuda`
+- **Container command**: `llama-server` with config-driven `command_args`
+- **Container port**: `8080` (llama.cpp default)
+- **Default host port**: `11435` (avoids Ollama’s `11434` and common web ports)
+- **Health check**: HTTP `GET /health` expecting `200-299`
+- **Enabled by default**: `false` (opt-in to avoid changing default `airpods start` behavior)
 
-## Service Shapes Described So Far
+Note: If the upstream image changes health path or port, the plan expects a config override rather than code changes.
 
-The current private plan describes three main ways to run llama.cpp under airpods:
+## Configuration Schema Extensions
 
-- OpenAI-compatible backend for Open WebUI:
-  - Service name: `llamacpp`.
-  - Runs a `llama-server` container exposing HTTP endpoints for OpenAI-style APIs.
-  - Open WebUI connects to this service using its OpenAI connection settings (e.g., pointing to the service’s `/v1` endpoint).
-- Standalone service with native WebUI:
-  - Service name: `llamacpp-ui`.
-  - Uses the same underlying server but relies on the built-in WebUI to provide a minimal chat and model management interface.
-  - Exposes the WebUI over HTTP while still offering the same HTTP API.
-- Hybrid / multi-backend layouts:
-  - Run Ollama and llama.cpp simultaneously, with Open WebUI configured to talk to both backends.
-  - Use separate llama.cpp instances with different models or configurations (e.g., a fast chat-oriented instance vs a large-context instance), each bound to its own port.
+Extend `ServiceConfig` with:
 
-All of these are expressed as TOML service entries under `[services.*]` with fields such as `image`, `pod`, `container`, `ports`, `volumes`, `gpu`, `health`, `env`, `resources`, and `command_args` in the existing plan.
+- `command_args`: `Dict[str, CommandArg]`
+  - `CommandArg = str | int | float | bool | List[str | int | float]`
+- `entrypoint_override`: `Optional[List[str]]`
+- `default_model`: `Optional[str]` (default GGUF file name or relative path under `/models`)
 
-## Configuration Patterns (As Described)
+### Rendering Rules For `command_args`
 
-- Services are defined under `services.llamacpp` and `services.llamacpp-ui` with:
-  - `image` values pointing at llama.cpp images (CPU or GPU-oriented variants).
-  - `pod`/`container` names and `network_aliases` so other services (like Open WebUI) can reach them.
-  - `ports` mapping a host port to the container’s HTTP port.
-  - `volumes` mapping a persistent volume (e.g., `airpods_llamacpp_models`) into `/models` inside the container so GGUF files persist.
-  - `gpu` configuration with `enabled` / `force_cpu` flags.
-  - `health` checks using HTTP paths described in the plan (e.g., `/health` for the API, `/` for the UI) and expected status ranges.
-  - Optional `resources` fields (such as memory/CPU limits) when needed.
-- Command-line arguments are described as `command_args`:
-  - Represented as a mapping from option names (like `model`, `ctx_size`, `threads`, `n_gpu_layers`, `batch_size`, `port`, `host`) to values.
-  - Intended to be rendered into CLI flags for `llama-server` (for example, `model = "/models/{{default_model}}"` becoming a `--model` flag after template resolution).
-  - Template placeholders (for example `{{default_model}}`) are expected to be resolved using the existing airpods configuration template mechanism.
+Given TOML:
 
-The private plan proposes extending the service schema to support these `command_args` and describes helper logic for building the final container command from this mapping.
+```toml
+command_args = { model = "/models/{{services.llamacpp.default_model}}", ctx_size = 4096, n_gpu_layers = 40, threads = 8, port = 8080, host = "0.0.0.0", log_disable = true }
+```
 
-## How It Serves Airpods Goals
+Render into CLI flags:
 
-- Fits the “orchestrate local AI services” purpose:
-  - llama.cpp adds another local model backend that airpods can manage via Podman, alongside Ollama and future runtimes.
-  - Airpods remains a thin, focused CLI; llama.cpp provides the inference engine and, optionally, its own UI.
-- Works with the existing lifecycle model:
-  - `start` creates the llama.cpp model volume(s), pulls images, brings up the pods/containers, waits for their HTTP health checks, and reports readiness.
-  - `start --pre-fetch` can warm caches by downloading llama.cpp images without starting containers.
-  - `stop` shuts down pods cleanly while preserving model volumes.
-  - `status` shows each llama-related service (backend and optional UI) with basic HTTP health and URLs.
-  - `logs` tails the llama.cpp containers for debugging or monitoring model loads and requests.
-- Respects configuration-first design:
-  - Service details, images, ports, and command arguments are all described in TOML and can be templated, rather than hard-coded in commands.
-  - Users can point llama.cpp at different GGUF models or adjust parameters (context size, threads, GPU layer usage) by editing config rather than modifying code.
+- Keys are converted from snake_case to kebab-case: `ctx_size` → `--ctx-size`
+- Booleans:
+  - `true` → include flag with no value (`--log-disable`)
+  - `false` → omit flag entirely
+- Lists: repeat the flag for each entry (preserve order)
+  - `stop = ["\n\n", "###"]` → `--stop "\n\n" --stop "###"`
+- Numbers and strings: render as `--key value` using shell-safe argument arrays (no extra quoting in the config)
+- Ordering: preserve TOML insertion order
 
-## Utility As A Service
+`entrypoint_override` (if provided) replaces the default `llama-server` entrypoint.
 
-- Enables alternative and complementary model runtimes:
-  - Users can keep Ollama as a convenient multi-model backend while using llama.cpp for power-user control, quantization experiments, or CPU-focused workloads, as described in the existing plan.
-  - Open WebUI can be configured to target llama.cpp’s OpenAI-style API endpoints, allowing side-by-side comparisons and different backends per workspace.
-- Supports diverse hardware:
-  - The plan explicitly calls out CPU-only setups and GPU-accelerated setups, using image variants and command flags to adapt to the available hardware.
-  - Quantized GGUF models make it practical to run larger models on constrained machines, aligning with airpods’ goal of working well on a single local host.
-- Offers multiple UX options:
-  - For users who prefer a minimal interface, the llama.cpp native WebUI described in the plan can provide a lightweight alternative to Open WebUI.
-  - For users who want a richer, multi-backend experience, the Open WebUI + llama.cpp backend arrangement remains available.
+## Default Config Block (Example)
 
-## Implementation Notes (From The Existing Plan)
+```toml
+[services.llamacpp]
+enabled = false
+image = "ghcr.io/ggerganov/llama.cpp:server"
+pod = "llamacpp"
+container = "llamacpp-0"
+ports = [{ host = 11435, container = 8080 }]
+volumes = { models = { source = "bind://airpods_models/gguf", target = "/models" } }
+health = { path = "/health", expected_status = [200, 299] }
+needs_webui_secret = false
 
-- The private plan proposes:
-  - Adding schema support for `command_args` (and potentially an `entrypoint_override`) so services like llama.cpp that are configured via CLI flags can be expressed declaratively in config.
-  - Implementing helper logic to render `command_args` into a final command array, including template resolution.
-  - Selecting llama.cpp images based on GPU detection (e.g., CPU vs CUDA vs ROCm variants), using the existing GPU detection utilities.
-  - Extending startup behavior for llama.cpp services to account for model load time, using the configured health endpoints and timeouts.
-- Testing suggestions in the plan include:
-  - Unit tests for config rendering (especially `command_args`) and image selection.
-  - Mocked tests around service start behavior and health probing.
-  - Manual checks (and, optionally, heavier integration tests) for successful startup, HTTP health, WebUI access, and Open WebUI connectivity.
+default_model = "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+command_args = { model = "/models/{{services.llamacpp.default_model}}", ctx_size = 4096, n_gpu_layers = 40, threads = 8, port = 8080, host = "0.0.0.0" }
+```
+
+To enable GPU:
+
+```toml
+[services.llamacpp.gpu]
+enabled = true
+force_cpu = false
+```
+
+To force CPU:
+
+```toml
+[services.llamacpp.gpu]
+enabled = false
+force_cpu = true
+```
+
+## Volumes & Paths
+
+- Bind-mounted GGUF store: `bind://airpods_models/gguf` → `$AIRPODS_HOME/volumes/airpods_models/gguf`
+- Container mount: `/models`
+
+This keeps GGUF artifacts separate from Ollama and ComfyUI models.
+
+## Runtime + GPU Behavior
+
+- `get_runtime(prefer)` still selects Podman or Docker.
+- GPU flags are injected via existing `gpu.py` and per-runtime adapters.
+- `cuda_version` from config should select the `server-cuda` image when `gpu.enabled = true`.
+- If GPU detection fails and `force_cpu = false`, emit a warning and fall back to CPU image.
+
+## CLI Behavior Updates
+
+- `start`:
+  - Accepts `llamacpp` as a service name (and alias `llama`, `llama-cpp`, `llama.cpp`).
+  - Creates the GGUF bind directory if missing.
+  - Pulls the `llamacpp` image.
+  - Uses `command_args` rendering to build the container command.
+  - Waits for `/health` to return 2xx unless `health.path` is unset.
+- `stop`:
+  - Stops `llamacpp` gracefully; preserves the GGUF volume.
+- `status`:
+  - Shows URL `http://localhost:11435` (or configured host port) and health status.
+- `logs`:
+  - Tails `llamacpp` container logs.
+- `doctor`:
+  - Validates llama.cpp image availability, port conflicts, and models path permissions.
+- `clean`:
+  - Removes `airpods_models/gguf` when `--volumes` or `--all` is used.
+- `backup` / `restore`:
+  - Include GGUF metadata directory (config + model index files if present), not the GGUF model binaries unless `--include-models` is explicitly added later.
+- `config validate`:
+  - Enforces that `command_args.model` is present or `default_model` is set.
+
+## Models Command Extension
+
+Add a GGUF scope to `models` without changing existing Ollama behavior:
+
+- `airpods models gguf pull <url> [--name <filename>]` → downloads into `airpods_models/gguf`
+- `airpods models gguf list` → lists `*.gguf` in the GGUF store with sizes
+- `airpods models gguf remove <filename>` → deletes from GGUF store
+
+If a separate command is preferred, introduce `airpods gguf` with the same subcommands.
+
+## ComfyUI Integration
+
+- Custom node package: `plugins/comfyui/airpods_gguf/`
+- Node uses llama.cpp HTTP endpoints and returns text to downstream nodes.
+- Required config/env to reach the service:
+  - `AIRPODS_LLAMACPP_URL` defaulting to `http://localhost:11435/v1`
+
+See `docs/plans/custom_node_llama.md` for full node design.
+
+## Testing Suggestions
+
+- Unit tests:
+  - `command_args` rendering + template resolution
+  - service selection (CPU/GPU image)
+  - `models gguf` path handling
+  - `doctor` llama.cpp checks
+- Manual checks:
+  - `airpods start llamacpp`
+  - Health endpoint returns OK
+  - ComfyUI custom node can chat via llama.cpp
 
 ## Summary
 
-- llama.cpp can be added as an optional service that:
-  - Uses the same Podman- and config-driven patterns as existing services.
-  - Exposes an OpenAI-style HTTP API and, optionally, its own WebUI.
-  - Stores models in persistent volumes using GGUF format and quantization.
-  - Runs on CPU or GPU, configured through TOML and templates.
-- This makes llama.cpp another building block in the airpods stack, giving users more control over model runtimes while keeping airpods focused on orchestration rather than becoming a model runtime or UI itself.
+- llama.cpp becomes the dedicated GGUF LLM runtime service.
+- ComfyUI consumes LLMs via a custom node that calls llama.cpp’s OpenAI-style HTTP API.
+- No dependency on Ollama’s on-disk format; GGUF storage is separate and explicit.
+- This reduces ComfyUI image complexity while keeping airpods’ orchestration role intact.
