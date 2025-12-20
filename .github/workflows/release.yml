@@ -38,13 +38,19 @@ jobs:
       - name: Build package
         run: |
           uv build
-          # Provide a friendly asset name alongside the standard wheel filename
-          cp dist/*.whl dist/airpods-${{ steps.version.outputs.VERSION }}.whl
 
       - name: Extract version from tag
         id: version
         run: |
           echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Rename release artifact
+        run: |
+          mv dist/*.whl dist/airpods-${{ steps.version.outputs.VERSION }}.whl
+          if [ ! -f "dist/airpods-${{ steps.version.outputs.VERSION }}.whl" ]; then
+            echo "Missing release artifact: dist/airpods-${{ steps.version.outputs.VERSION }}.whl" >&2
+            exit 1
+          fi
 
       - name: Generate changelog
         id: changelog
@@ -84,26 +90,29 @@ jobs:
 
           CHANGES=""
           if [ -n "${FEATS}" ]; then
-            CHANGES="${CHANGES}\n### Features\n${FEATS}"
+            CHANGES="${CHANGES}### Features\n${FEATS}\n\n"
           fi
           if [ -n "${FIXES}" ]; then
-            CHANGES="${CHANGES}\n### Fixes\n${FIXES}"
+            CHANGES="${CHANGES}### Fixes\n${FIXES}\n\n"
           fi
           if [ -n "${DOCS}" ]; then
-            CHANGES="${CHANGES}\n### Docs\n${DOCS}"
+            CHANGES="${CHANGES}### Docs\n${DOCS}\n\n"
           fi
           if [ -n "${REFACTOR}" ]; then
-            CHANGES="${CHANGES}\n### Refactor\n${REFACTOR}"
+            CHANGES="${CHANGES}### Refactor\n${REFACTOR}\n\n"
           fi
           if [ -n "${CHORE}" ]; then
-            CHANGES="${CHANGES}\n### Chore\n${CHORE}"
+            CHANGES="${CHANGES}### Chore\n${CHORE}\n\n"
           fi
           if [ -n "${TESTS}" ]; then
-            CHANGES="${CHANGES}\n### Tests\n${TESTS}"
+            CHANGES="${CHANGES}### Tests\n${TESTS}\n\n"
           fi
           if [ -n "${OTHER}" ]; then
-            CHANGES="${CHANGES}\n### Other\n${OTHER}"
+            CHANGES="${CHANGES}### Other\n${OTHER}\n\n"
           fi
+
+          # Trim trailing whitespace/newlines
+          CHANGES="$(printf "%s" "${CHANGES}")"
 
           # Create changelog content
           cat >> $GITHUB_STEP_SUMMARY << EOF
@@ -139,13 +148,6 @@ jobs:
             # Or install from git tag
             uv tool install git+https://github.com/${{ github.repository }}.git@${{ github.ref_name }}
             ```
-
-            ## Full Changelog
-
-            **Full Diff**: https://github.com/${{ github.repository }}/compare/${{ github.ref_name }}
-
-            ---
-            Note: The release includes both `airpods-${{ steps.version.outputs.VERSION }}.whl` and the standard wheel filename; they contain the same build.
           files: |
             dist/airpods-${{ steps.version.outputs.VERSION }}.whl
           draft: false
