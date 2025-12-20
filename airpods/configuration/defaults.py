@@ -108,5 +108,32 @@ DEFAULT_CONFIG_DICT = {
             "resources": {},
             "needs_webui_secret": False,
         },
+        "llamacpp": {
+            "enabled": False,
+            "image": "ghcr.io/ggerganov/llama.cpp:server",
+            "pod": "llamacpp",
+            "container": "llamacpp-0",
+            "ports": [{"host": 11435, "container": 8080}],
+            "volumes": {
+                "models": {
+                    "source": "bind://airpods_models/gguf",
+                    "target": "/models",
+                }
+            },
+            "gpu": {"enabled": True, "force_cpu": False},
+            "health": {"path": "/health", "expected_status": [200, 299]},
+            "env": {},
+            "resources": {},
+            "needs_webui_secret": False,
+            "default_model": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+            "command_args": {
+                "model": "/models/{{services.llamacpp.default_model}}",
+                "ctx_size": 4096,
+                "n_gpu_layers": 40,
+                "threads": 8,
+                "port": 8080,
+                "host": "0.0.0.0",
+            },
+        },
     },
 }

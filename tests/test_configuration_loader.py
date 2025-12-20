@@ -88,3 +88,14 @@ def test_open_webui_ollama_integration_when_enabled():
     resolved = resolve_templates(config)
 
     assert resolved.services["open-webui"].auto_configure_ollama is True
+
+
+def test_llamacpp_command_args_template_resolution():
+    config_dict = deepcopy(DEFAULT_CONFIG_DICT)
+    config_dict["services"]["llamacpp"]["enabled"] = True
+
+    config = AirpodsConfig.from_dict(config_dict)
+    resolved = resolve_templates(config)
+
+    model_arg = resolved.services["llamacpp"].command_args.get("model")
+    assert model_arg == "/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf"

@@ -1,12 +1,14 @@
-"""Models command implementation for Ollama model management."""
+"""Models command implementation for Ollama and GGUF model management."""
 
 from __future__ import annotations
 
+from pathlib import Path
+import time
 from typing import Optional
 
 import typer
 
-from airpods import ollama, ui
+from airpods import gguf, ollama, ui
 from airpods.logging import console
 
 from ..common import COMMAND_CONTEXT, get_ollama_port
@@ -15,7 +17,11 @@ from ..help import command_help_option, maybe_show_command_help, show_command_he
 from ..type_defs import CommandMap
 
 # Create sub-app for models command
-models_app = typer.Typer(help="Manage Ollama models", context_settings=COMMAND_CONTEXT)
+models_app = typer.Typer(
+    help="Manage Ollama and GGUF models", context_settings=COMMAND_CONTEXT
+)
+gguf_app = typer.Typer(help="Manage GGUF model files", context_settings=COMMAND_CONTEXT)
+models_app.add_typer(gguf_app, name="gguf")
 
 
 @models_app.callback(invoke_without_command=True)
@@ -48,6 +54,109 @@ def ensure_ollama_running() -> int:
         raise typer.Exit(1)
 
     return port
+
+
+def _gguf_dir() -> Path:
+    return gguf.gguf_models_dir()
+
+
+def _format_mtime(epoch_seconds: float) -> str:
+    now = time.time()
+    delta = max(0, now - epoch_seconds)
+    if delta < 60:
+        return f"{int(delta)}s"
+    if delta < 3600:
+        return f"{int(delta // 60)}m"
+    if delta < 86400:
+        return f"{int(delta // 3600)}h"
+    return f"{int(delta // 86400)}d"
+
+
+@gguf_app.command(name="list", context_settings=COMMAND_CONTEXT)
+def list_gguf_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+) -> None:
+    """List GGUF models in the local GGUF store."""
+
+    maybe_show_command_help(ctx, help_)
+    path = _gguf_dir()
+
+    if not path.exists():
+        console.print("[info]No GGUF models directory found[/]")
+        return
+
+    models = sorted(path.glob("*.gguf"))
+    if not models:
+        console.print("[info]No GGUF models found[/]")
+        return
+
+    table = ui.themed_table()
+    table.add_column("Model", no_wrap=True)
+    table.add_column("Size", justify="right")
+    table.add_column("Modified")
+
+    for model in models:
+        size = ollama.format_size(model.stat().st_size)
+        mtime = model.stat().st_mtime
+        modified = _format_mtime(mtime)
+        table.add_row(model.name, size, modified)
+
+    console.print(table)
+
+
+@gguf_app.command(name="ls", context_settings=COMMAND_CONTEXT)
+def list_gguf_alias(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+) -> None:
+    """Alias for gguf list."""
+
+    list_gguf_cmd(ctx, help_)
+
+
+@gguf_app.command(name="pull", context_settings=COMMAND_CONTEXT)
+def pull_gguf_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+    url: str = typer.Argument(..., help="Direct URL to a GGUF file."),
+    name: Optional[str] = typer.Option(
+        None, "--name", "-n", help="Override the filename to save as."
+    ),
+) -> None:
+    """Download a GGUF file into the local GGUF store."""
+
+    maybe_show_command_help(ctx, help_)
+    try:
+        dest, size_bytes = gguf.download_model(url, name=name)
+    except FileExistsError as exc:
+        console.print(f"[warn]{exc}[/]")
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        console.print(f"[error]Failed to download GGUF model: {exc}[/]")
+        raise typer.Exit(code=1)
+
+    size = ollama.format_size(size_bytes)
+    console.print(f"[ok]Saved GGUF model: {dest} ({size})[/]")
+
+
+@gguf_app.command(name="remove", context_settings=COMMAND_CONTEXT)
+def remove_gguf_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+    name: str = typer.Argument(..., help="Filename of the GGUF model to delete."),
+) -> None:
+    """Delete a GGUF model from the local GGUF store."""
+
+    maybe_show_command_help(ctx, help_)
+    path = _gguf_dir() / name
+
+    if not path.exists():
+        console.print(f"[warn]GGUF model not found: {path}[/]")
+        raise typer.Exit(code=1)
+
+    path.unlink()
+    console.print(f"[ok]Removed GGUF model: {path}[/]")
 
 
 @models_app.command(name="list", context_settings=COMMAND_CONTEXT)

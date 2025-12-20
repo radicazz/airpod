@@ -214,6 +214,8 @@ def run_container(
     gpu_device_flag: Optional[str] = None,
     pids_limit: int = 2048,
     userns_mode: Optional[str] = None,
+    entrypoint: Optional[str] = None,
+    command: Optional[List[str]] = None,
 ) -> bool:
     existed = container_exists(name)
 
@@ -245,6 +247,9 @@ def run_container(
     if userns_mode:
         args.extend(["--userns", userns_mode])
 
+    if entrypoint:
+        args.extend(["--entrypoint", entrypoint])
+
     for key, val in env.items():
         args.extend(["-e", f"{key}={val}"])
     for volume_name, dest in volumes:
@@ -252,6 +257,8 @@ def run_container(
     if gpu and gpu_device_flag:
         args.extend(shlex.split(gpu_device_flag))
     args.append(image)
+    if command:
+        args.extend(command)
     try:
         _run(args, capture=False)
     except subprocess.CalledProcessError as exc:

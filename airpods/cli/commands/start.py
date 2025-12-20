@@ -6,7 +6,7 @@ import queue
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 import typer
@@ -376,8 +376,30 @@ def register(app: typer.Typer) -> CommandMap:
 
             try:
                 with status_spinner(f"Launching {spec.name}"):
+                    effective_spec = spec
+                    use_cpu_image = force_cpu or not gpu_available
+                    if (
+                        spec.name == "llamacpp"
+                        and use_cpu_image
+                        and spec.cpu_image
+                        and spec.cpu_image != spec.image
+                    ):
+                        message = (
+                            "llamacpp GPU requested but no GPU detected; "
+                            "falling back to CPU image."
+                            if not force_cpu
+                            else "llamacpp: forcing CPU image."
+                        )
+                        console.print(f"[warn]{message}[/]")
+                        effective_spec = replace(
+                            spec,
+                            image=spec.cpu_image,
+                            needs_gpu=False,
+                            force_cpu=True,
+                        )
+
                     manager.start_service(
-                        spec,
+                        effective_spec,
                         gpu_available=gpu_available,
                         force_cpu_override=force_cpu,
                     )
