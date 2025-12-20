@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -36,6 +38,8 @@ jobs:
       - name: Build package
         run: |
           uv build
+          # Provide a friendly asset name alongside the standard wheel filename
+          cp dist/*.whl dist/airpods-${{ steps.version.outputs.VERSION }}.whl
 
       - name: Extract version from tag
         id: version
@@ -49,11 +53,56 @@ jobs:
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
           if [ -z "$PREV_TAG" ]; then
-            # First release - get all commits
-            CHANGES=$(git log --pretty=format:"- %s ([%h](https://github.com/${{ github.repository }}/commit/%h))" --reverse)
+            RANGE=""
           else
-            # Get commits since previous tag
-            CHANGES=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s ([%h](https://github.com/${{ github.repository }}/commit/%h))" --reverse)
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          # Build grouped changelog (by conventional commit prefix)
+          FEATS=""
+          FIXES=""
+          DOCS=""
+          REFACTOR=""
+          CHORE=""
+          TESTS=""
+          OTHER=""
+
+          while IFS='|' read -r SUBJECT HASH; do
+            ENTRY="- ${SUBJECT} ([${HASH}](https://github.com/${{ github.repository }}/commit/${HASH}))"
+            PREFIX=$(echo "${SUBJECT}" | sed -E 's/^([a-zA-Z0-9_-]+).*/\1/' | tr '[:upper:]' '[:lower:]')
+
+            case "${PREFIX}" in
+              feat) FEATS="${FEATS}\n${ENTRY}" ;;
+              fix) FIXES="${FIXES}\n${ENTRY}" ;;
+              docs) DOCS="${DOCS}\n${ENTRY}" ;;
+              refactor) REFACTOR="${REFACTOR}\n${ENTRY}" ;;
+              chore) CHORE="${CHORE}\n${ENTRY}" ;;
+              test|tests) TESTS="${TESTS}\n${ENTRY}" ;;
+              *) OTHER="${OTHER}\n${ENTRY}" ;;
+            esac
+          done < <(git log ${RANGE} --pretty=format:"%s|%h" --reverse)
+
+          CHANGES=""
+          if [ -n "${FEATS}" ]; then
+            CHANGES="${CHANGES}\n### Features\n${FEATS}"
+          fi
+          if [ -n "${FIXES}" ]; then
+            CHANGES="${CHANGES}\n### Fixes\n${FIXES}"
+          fi
+          if [ -n "${DOCS}" ]; then
+            CHANGES="${CHANGES}\n### Docs\n${DOCS}"
+          fi
+          if [ -n "${REFACTOR}" ]; then
+            CHANGES="${CHANGES}\n### Refactor\n${REFACTOR}"
+          fi
+          if [ -n "${CHORE}" ]; then
+            CHANGES="${CHANGES}\n### Chore\n${CHORE}"
+          fi
+          if [ -n "${TESTS}" ]; then
+            CHANGES="${CHANGES}\n### Tests\n${TESTS}"
+          fi
+          if [ -n "${OTHER}" ]; then
+            CHANGES="${CHANGES}\n### Other\n${OTHER}"
           fi
 
           # Create changelog content
@@ -85,7 +134,7 @@ jobs:
 
             ```bash
             # Using uv (recommended)
-            uv tool install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/airpods-${{ steps.version.outputs.VERSION }}-py3-none-any.whl
+            uv tool install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/airpods-${{ steps.version.outputs.VERSION }}.whl
 
             # Or install from git tag
             uv tool install git+https://github.com/${{ github.repository }}.git@${{ github.ref_name }}
@@ -94,8 +143,11 @@ jobs:
             ## Full Changelog
 
             **Full Diff**: https://github.com/${{ github.repository }}/compare/${{ github.ref_name }}
+
+            ---
+            Note: The release includes both `airpods-${{ steps.version.outputs.VERSION }}.whl` and the standard wheel filename; they contain the same build.
           files: |
-            dist/*.whl
+            dist/airpods-${{ steps.version.outputs.VERSION }}.whl
           draft: false
           prerelease: false
           generate_release_notes: false
