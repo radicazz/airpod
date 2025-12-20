@@ -84,9 +84,8 @@ def get_podman_gpu_flag(config_flag: Optional[str] = None) -> Optional[str]:
         # Use CDI method - works with Podman 3.2+ and nvidia-ctk 1.16+
         return "--device nvidia.com/gpu=all --security-opt=label=disable"
 
-    # Fallback to legacy method (requires nvidia-container-runtime)
-    # This may not work on all systems, but is the best fallback
-    return "--gpus all --security-opt=label=disable"
+    # CDI is required for reliable GPU passthrough in Podman.
+    return None
 
 
 def get_docker_gpu_flag(config_flag: Optional[str] = None) -> Optional[str]:

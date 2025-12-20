@@ -106,6 +106,32 @@ def load_config() -> AirpodsConfig:
     if config_path := locate_config_file():
         user_config = load_toml(config_path)
         config_data = merge_configs(config_data, user_config)
+    # Normalize legacy llama.cpp registry if present in user config.
+    services = config_data.get("services", {})
+    llamacpp = services.get("llamacpp")
+    if isinstance(llamacpp, dict):
+        image = llamacpp.get("image")
+        if isinstance(image, str) and image.startswith("ghcr.io/ggerganov/llama.cpp"):
+            llamacpp["image"] = image.replace(
+                "ghcr.io/ggerganov/llama.cpp", "ghcr.io/ggml-org/llama.cpp", 1
+            )
+        command_args = llamacpp.get("command_args")
+        ports = llamacpp.get("ports")
+        if isinstance(command_args, dict) and isinstance(ports, list) and ports:
+            try:
+                host_port = ports[0].get("host")
+                container_port = ports[0].get("container")
+            except AttributeError:
+                host_port = None
+                container_port = None
+            port_arg = command_args.get("port")
+            if (
+                isinstance(host_port, int)
+                and isinstance(container_port, int)
+                and host_port != container_port
+                and (port_arg is None or port_arg == container_port)
+            ):
+                command_args["port"] = host_port
     try:
         config = AirpodsConfig.from_dict(config_data)
     except ValueError as exc:
@@ -135,11 +161,4 @@ def reload_config() -> AirpodsConfig:
 
 
 def _apply_runtime_defaults(config: AirpodsConfig) -> AirpodsConfig:
-    runtime = config.runtime
-    updates: Dict[str, Any] = {}
-    if runtime.gpu_device_flag == "auto":
-        updates["gpu_device_flag"] = "--device nvidia.com/gpu=all"
-    if not updates:
-        return config
-    new_runtime = runtime.model_copy(update=updates)
-    return config.model_copy(update={"runtime": new_runtime})
+    return config

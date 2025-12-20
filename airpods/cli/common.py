@@ -107,6 +107,9 @@ SERVICE_NAME_ALIASES = {
     "comfy": "comfyui",
     "comfyui": "comfyui",
     "comfy-ui": "comfyui",
+    "llama": "llamacpp",
+    "llama-cpp": "llamacpp",
+    "llama.cpp": "llamacpp",
 }
 
 ALIAS_HELP_TEMPLATE = "[alias]Alias for {canonical}[/]"
@@ -131,6 +134,26 @@ def resolve_services(names: Optional[list[str]]) -> list[ServiceSpec]:
     try:
         return manager.resolve(normalized)
     except UnknownServiceError as exc:  # noqa: B904
+        # Check if the service exists but is disabled in config.
+        disabled = [
+            name
+            for name in normalized
+            if name in _CONFIG.services and not _CONFIG.services[name].enabled
+        ]
+        if disabled:
+            if len(disabled) == 1:
+                name = disabled[0]
+                message = (
+                    f"service '{name}' is disabled in config. "
+                    f"Set services.{name}.enabled=true to use it."
+                )
+            else:
+                names_str = ", ".join(disabled)
+                message = (
+                    f"services disabled in config: {names_str}. "
+                    "Enable them to use these commands."
+                )
+            raise typer.BadParameter(message) from exc
         raise typer.BadParameter(str(exc)) from exc
 
 

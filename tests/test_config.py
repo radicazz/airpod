@@ -102,3 +102,35 @@ def test_other_services_unaffected_by_ollama_flag():
         "comfyui", config.services["comfyui"], config
     )
     assert "OLLAMA_BASE_URL" not in comfyui_spec.env
+
+
+def test_llamacpp_command_args_rendering():
+    config_dict = deepcopy(DEFAULT_CONFIG_DICT)
+    config_dict["services"]["llamacpp"]["enabled"] = True
+    config_dict["services"]["llamacpp"]["command_args"] = {
+        "model": "/models/foo.gguf",
+        "ctx_size": 4096,
+        "log_disable": True,
+        "stop": ["\\n\\n", "###"],
+        "threads": 8,
+        "debug": False,
+    }
+
+    config = AirpodsConfig.from_dict(config_dict)
+    spec = _service_spec_from_config("llamacpp", config.services["llamacpp"], config)
+
+    assert spec.entrypoint == "/app/llama-server"
+    assert spec.command == [
+        "--model",
+        "/models/foo.gguf",
+        "--ctx-size",
+        "4096",
+        "--log-disable",
+        "--stop",
+        "\\n\\n",
+        "--stop",
+        "###",
+        "--threads",
+        "8",
+    ]
+    assert "--debug" not in spec.command

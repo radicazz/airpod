@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -110,6 +110,10 @@ class ResourceLimits(BaseModel):
         return value
 
 
+CommandArgScalar = Union[str, int, float, bool]
+CommandArgValue = Union[CommandArgScalar, List[Union[str, int, float]]]
+
+
 class ServiceConfig(BaseModel):
     enabled: bool = True
     image: str
@@ -126,6 +130,10 @@ class ServiceConfig(BaseModel):
     cuda_override: Optional[str] = None
     auto_pull_models: List[str] = Field(default_factory=list)
     auto_configure_ollama: bool = False
+    command_args: Dict[str, CommandArgValue] = Field(default_factory=dict)
+    entrypoint_override: Optional[List[str]] = None
+    default_model: Optional[str] = None
+    default_model_url: Optional[str] = None
 
     model_config = ConfigDict(extra="ignore")
 
@@ -149,6 +157,16 @@ class ServiceConfig(BaseModel):
             return [value]
         return value
 
+    @field_validator("entrypoint_override")
+    @classmethod
+    def normalize_entrypoint_override(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, list):
+            cleaned = [str(item).strip() for item in value if str(item).strip()]
+            return cleaned or None
+        return None
+
 
 class AirpodsConfig(BaseModel):
     meta: MetaConfig = Field(default_factory=MetaConfig)
@@ -166,6 +184,22 @@ class AirpodsConfig(BaseModel):
         if missing:
             raise ValueError(
                 f"Missing required service definitions: {', '.join(missing)}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def ensure_llamacpp_model(self) -> "AirpodsConfig":
+        service = self.services.get("llamacpp")
+        if not service or not service.enabled:
+            return self
+        model_arg = service.command_args.get("model") if service.command_args else None
+        if model_arg is not None and not isinstance(model_arg, str):
+            raise ValueError("llamacpp command_args.model must be a string")
+        if isinstance(model_arg, str):
+            model_arg = model_arg.strip() or None
+        if not model_arg and not service.default_model:
+            raise ValueError(
+                "llamacpp requires command_args.model or default_model to be set"
             )
         return self
 

@@ -86,7 +86,7 @@ class TestPodmanGPUFlag:
         mock_detect.return_value = (True, "1.16.0")
         mock_cdi.return_value = False
         flag = get_podman_gpu_flag()
-        assert flag == "--gpus all --security-opt=label=disable"
+        assert flag is None
 
 
 class TestDockerGPUFlag:

@@ -13,7 +13,7 @@ MAX_RESOLUTION_DEPTH = 100
 
 
 def resolve_templates(config: AirpodsConfig) -> AirpodsConfig:
-    """Resolve supported template variables inside configuration env vars."""
+    """Resolve supported template variables inside configuration strings."""
     data = config.to_dict()
 
     context = {
@@ -31,6 +31,7 @@ def resolve_templates(config: AirpodsConfig) -> AirpodsConfig:
             "ports": ports_list,
             "image": service_data.get("image"),
             "pod": service_data.get("pod"),
+            "default_model": service_data.get("default_model"),
         }
 
     services = data.get("services", {})
@@ -41,6 +42,45 @@ def resolve_templates(config: AirpodsConfig) -> AirpodsConfig:
                 env[key] = _resolve_string(
                     value, context, location=f"services.{service_name}.env.{key}"
                 )
+
+        default_model = service_data.get("default_model")
+        if isinstance(default_model, str) and "{{" in default_model:
+            service_data["default_model"] = _resolve_string(
+                default_model,
+                context,
+                location=f"services.{service_name}.default_model",
+            )
+            context["services"][service_name]["default_model"] = service_data[
+                "default_model"
+            ]
+
+        default_model_url = service_data.get("default_model_url")
+        if isinstance(default_model_url, str) and "{{" in default_model_url:
+            service_data["default_model_url"] = _resolve_string(
+                default_model_url,
+                context,
+                location=f"services.{service_name}.default_model_url",
+            )
+
+        command_args = service_data.get("command_args", {})
+        if isinstance(command_args, dict):
+            for key, value in list(command_args.items()):
+                command_args[key] = _resolve_value(
+                    value,
+                    context,
+                    location=f"services.{service_name}.command_args.{key}",
+                )
+
+        entrypoint = service_data.get("entrypoint_override")
+        if isinstance(entrypoint, list):
+            service_data["entrypoint_override"] = [
+                _resolve_value(
+                    item,
+                    context,
+                    location=f"services.{service_name}.entrypoint_override",
+                )
+                for item in entrypoint
+            ]
 
     return AirpodsConfig.from_dict(data)
 
@@ -101,4 +141,18 @@ def _lookup_path(path: str, context: Dict[str, Any]) -> Any:
                 return None
         else:
             return None
+    return value
+
+
+def _resolve_value(value: Any, context: Dict[str, Any], *, location: str) -> Any:
+    if isinstance(value, str) and "{{" in value:
+        return _resolve_string(value, context, location=location)
+    if isinstance(value, list):
+        resolved = []
+        for item in value:
+            if isinstance(item, str) and "{{" in item:
+                resolved.append(_resolve_string(item, context, location=location))
+            else:
+                resolved.append(item)
+        return resolved
     return value

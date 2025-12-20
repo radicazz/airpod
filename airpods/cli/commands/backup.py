@@ -39,11 +39,13 @@ BACKUP_PATHS = {
     "webui_dump": Path("webui") / "webui_dump.sql",
     "webui_plugins": Path("webui") / "plugins",
     "ollama_models": Path("ollama") / "models.json",
+    "gguf_metadata": Path("gguf") / "metadata",
     "manifest": Path("manifest.json"),
 }
 
 OLLAMA_VOLUME = "airpods_ollama_data"
 WEBUI_VOLUME = "airpods_webui_data"
+GGUF_VOLUME = "airpods_models"
 
 
 class BackupError(RuntimeError):
@@ -97,6 +99,20 @@ def _copytree(src: Path, dest: Path) -> None:
     shutil.copytree(src, dest, dirs_exist_ok=True)
 
 
+def _copytree_filtered(src: Path, dest: Path, *, exclude_suffixes: set[str]) -> None:
+    if not src.exists():
+        return
+    for path in src.rglob("*"):
+        if path.is_dir():
+            continue
+        if path.suffix.lower() in exclude_suffixes:
+            continue
+        rel = path.relative_to(src)
+        target = dest / rel
+        _ensure_dir(target.parent)
+        shutil.copy2(path, target)
+
+
 def _collect_config_dir(staging_dir: Path) -> bool:
     src = configs_dir()
     dest = staging_dir / BACKUP_PATHS["config"]
@@ -146,6 +162,16 @@ def _collect_webui_plugins(staging_dir: Path) -> bool:
         return False
     dest = staging_dir / BACKUP_PATHS["webui_plugins"]
     _copytree(src, dest)
+    return True
+
+
+def _collect_gguf_metadata(staging_dir: Path) -> bool:
+    src = volumes_dir() / GGUF_VOLUME / "gguf"
+    if not src.exists():
+        console.print("[info]No GGUF metadata found; skipping[/]")
+        return False
+    dest = staging_dir / BACKUP_PATHS["gguf_metadata"]
+    _copytree_filtered(src, dest, exclude_suffixes={".gguf"})
     return True
 
 
@@ -368,6 +394,17 @@ def _restore_webui_plugins(root: Path) -> bool:
     return True
 
 
+def _restore_gguf_metadata(root: Path) -> bool:
+    src = root / BACKUP_PATHS["gguf_metadata"]
+    if not src.exists():
+        console.print("[info]No GGUF metadata in backup; skipping[/]")
+        return False
+    dest = volumes_dir() / GGUF_VOLUME / "gguf"
+    _copytree(src, dest)
+    console.print(f"[ok]GGUF metadata restored to {dest}")
+    return True
+
+
 def _restore_ollama_metadata(root: Path) -> Optional[Path]:
     src = root / BACKUP_PATHS["ollama_models"]
     if not src.exists():
@@ -425,6 +462,7 @@ def register(app: typer.Typer) -> CommandMap:
 
         webui_spec = _resolve_service("open-webui")
         ollama_spec = _resolve_service("ollama")
+        llamacpp_spec = _resolve_service("llamacpp")
 
         with tempfile.TemporaryDirectory() as tmp:
             staging_dir = Path(tmp)
@@ -451,12 +489,16 @@ def register(app: typer.Typer) -> CommandMap:
                 container=ollama_spec.container if ollama_spec else None,
             )
 
+            console.print("[info]Collecting GGUF metadata (non-model files)...")
+            gguf_included = _collect_gguf_metadata(staging_dir)
+
             manifest = {
                 "airpods_version": AIRPODS_VERSION,
                 "created_at": _dt.datetime.now().isoformat(),
                 "services": {
                     "open-webui": _service_manifest(webui_spec),
                     "ollama": _service_manifest(ollama_spec),
+                    "llamacpp": _service_manifest(llamacpp_spec),
                 },
                 "components": {
                     "configs": config_included,
@@ -464,6 +506,7 @@ def register(app: typer.Typer) -> CommandMap:
                     "webui_dump": dump_included,
                     "webui_plugins": plugins_included,
                     "ollama_models_count": len(models),
+                    "gguf_metadata": gguf_included,
                     "models_metadata_only": True,
                 },
                 "notes": {
@@ -532,6 +575,7 @@ def register(app: typer.Typer) -> CommandMap:
                 _restore_webui_db(root, backup_existing)
             if not skip_plugins:
                 _restore_webui_plugins(root)
+            _restore_gguf_metadata(root)
             metadata_path = None
             if not skip_models:
                 metadata_path = _restore_ollama_metadata(root)

@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from airpods import state
 from airpods.configuration import get_config
 from airpods.configuration.errors import ConfigurationError
-from airpods.configuration.schema import AirpodsConfig, ServiceConfig
+from airpods.configuration.schema import AirpodsConfig, ServiceConfig, CommandArgValue
 from airpods.services import ServiceRegistry, ServiceSpec, VolumeMount
 from airpods.cuda import select_cuda_version
 from airpods.comfyui import (
@@ -95,6 +95,87 @@ def _resolve_cuda_image(
     return resolved_image
 
 
+def _derive_llamacpp_cpu_image(image: str) -> str:
+    if image.startswith("ghcr.io/ggerganov/llama.cpp"):
+        image = image.replace(
+            "ghcr.io/ggerganov/llama.cpp", "ghcr.io/ggml-org/llama.cpp", 1
+        )
+    if "server-cuda" in image:
+        return image.replace("server-cuda", "server")
+    if image.endswith("-cuda"):
+        return image[: -len("-cuda")]
+    return image
+
+
+def _derive_llamacpp_gpu_image(image: str) -> str:
+    if image.startswith("ghcr.io/ggerganov/llama.cpp"):
+        image = image.replace(
+            "ghcr.io/ggerganov/llama.cpp", "ghcr.io/ggml-org/llama.cpp", 1
+        )
+    if "server-cuda" in image or image.endswith("-cuda"):
+        return image
+    if ":server" in image:
+        return image.replace(":server", ":server-cuda")
+    return image
+
+
+def _resolve_service_image(
+    name: str, service: ServiceConfig, config: AirpodsConfig
+) -> tuple[str, Optional[str]]:
+    if name == "comfyui":
+        return _resolve_cuda_image(name, service, config), None
+    if name == "llamacpp":
+        original_image = service.image
+        cpu_image = _derive_llamacpp_cpu_image(service.image)
+        if original_image != cpu_image and original_image.startswith(
+            "ghcr.io/ggerganov/llama.cpp"
+        ):
+            console.print(
+                "[info]llamacpp: switching image to ghcr.io/ggml-org/llama.cpp (updated registry)[/]"
+            )
+        use_gpu = (
+            service.gpu.enabled
+            and not service.gpu.force_cpu
+            and config.runtime.cuda_version != "cpu"
+        )
+        if use_gpu:
+            return _derive_llamacpp_gpu_image(service.image), cpu_image
+        return cpu_image, cpu_image
+    return service.image, None
+
+
+def _snake_to_kebab(name: str) -> str:
+    return name.replace("_", "-")
+
+
+def _render_command_args(command_args: Dict[str, CommandArgValue]) -> List[str]:
+    args: List[str] = []
+    for key, value in command_args.items():
+        flag = f"--{_snake_to_kebab(key)}"
+        if isinstance(value, bool):
+            if value:
+                args.append(flag)
+            continue
+        if value is None:
+            continue
+        if isinstance(value, list):
+            for item in value:
+                args.append(flag)
+                args.append(str(item))
+            continue
+        args.append(flag)
+        args.append(str(value))
+    return args
+
+
+def _service_command_parts(service: ServiceConfig) -> tuple[Optional[str], List[str]]:
+    entrypoint_override = service.entrypoint_override or []
+    entrypoint = entrypoint_override[0] if entrypoint_override else None
+    base_args = entrypoint_override[1:] if entrypoint_override else []
+    command_args = _render_command_args(service.command_args or {})
+    return entrypoint, base_args + command_args
+
+
 def _get_comfyui_provider(config: AirpodsConfig):
     """Detect ComfyUI provider based on GPU capability and config."""
     has_gpu, gpu_name, compute_cap = detect_cuda_compute_capability()
@@ -143,8 +224,8 @@ def _service_spec_from_config(
     ports = [(port.host, port.container) for port in service.ports]
     env_factory = _webui_secret_env if service.needs_webui_secret else None
 
-    # Resolve CUDA-aware image for ComfyUI
-    resolved_image = _resolve_cuda_image(name, service, config)
+    # Resolve image selection (ComfyUI/llamacpp-specific handling)
+    resolved_image, cpu_image = _resolve_service_image(name, service, config)
 
     # Build environment variables with provider-specific defaults
     env = dict(service.env)
@@ -176,6 +257,22 @@ def _service_spec_from_config(
         if provider == "mmartial":
             userns_mode = "keep-id"
 
+    entrypoint, command_args = _service_command_parts(service)
+    command: Optional[List[str]] = None
+
+    if name == "llamacpp":
+        if entrypoint is None:
+            entrypoint = "/app/llama-server"
+        command = command_args or None
+    elif entrypoint is not None or command_args:
+        command = command_args or None
+
+    needs_gpu = (
+        service.gpu.enabled
+        and not service.gpu.force_cpu
+        and config.runtime.cuda_version != "cpu"
+    )
+
     return ServiceSpec(
         name=name,
         pod=service.pod,
@@ -186,10 +283,13 @@ def _service_spec_from_config(
         env_factory=env_factory,
         volumes=volumes,
         pids_limit=service.pids_limit,
-        needs_gpu=service.gpu.enabled,
+        needs_gpu=needs_gpu,
         health_path=service.health.path,
         force_cpu=service.gpu.force_cpu,
         userns_mode=userns_mode,
+        entrypoint=entrypoint,
+        command=command,
+        cpu_image=cpu_image,
     )
 
 

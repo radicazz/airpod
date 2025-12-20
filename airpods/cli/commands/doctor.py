@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import typer
 
+import os
+
 from airpods import __version__, gpu as gpu_utils, ui
+import airpods.config as config_module
+from airpods.configuration import get_config
 from airpods.logging import console
 from airpods.system import detect_cuda_compute_capability
 from airpods.updates import (
@@ -87,6 +91,47 @@ def register(app: typer.Typer) -> CommandMap:
                 "[error]Resolve the missing dependencies and re-run doctor.[/]"
             )
             raise typer.Exit(code=1)
+
+        config = get_config()
+        llamacpp = config.services.get("llamacpp")
+        if llamacpp and llamacpp.enabled:
+            spec = config_module.REGISTRY.get("llamacpp")
+            console.print("[info]llamacpp checks:[/]")
+
+            if spec:
+                if manager.runtime.image_exists(spec.image):
+                    console.print(f"[ok]llamacpp image present: {spec.image}[/]")
+                else:
+                    console.print(
+                        f"[warn]llamacpp image not pulled yet: {spec.image}[/]"
+                    )
+                if spec.cpu_image and spec.cpu_image != spec.image:
+                    if not manager.runtime.image_exists(spec.cpu_image):
+                        console.print(
+                            f"[warn]llamacpp CPU image not pulled: {spec.cpu_image}[/]"
+                        )
+
+            llamacpp_ports = {p.host for p in llamacpp.ports}
+            for name, service in config.services.items():
+                if name == "llamacpp" or not service.enabled:
+                    continue
+                for mapping in service.ports:
+                    if mapping.host in llamacpp_ports:
+                        console.print(
+                            f"[warn]llamacpp port conflict: {mapping.host} also used by {name}[/]"
+                        )
+
+            from airpods.state import state_root
+
+            gguf_path = state_root() / "volumes" / "airpods_models" / "gguf"
+            if gguf_path.exists():
+                writable = os.access(gguf_path, os.W_OK)
+            else:
+                writable = os.access(gguf_path.parent, os.W_OK)
+            if writable:
+                console.print(f"[ok]GGUF store writable: {gguf_path}[/]")
+            else:
+                console.print(f"[warn]GGUF store not writable: {gguf_path}[/]")
 
         ui.success_panel("doctor complete: environment ready.")
 

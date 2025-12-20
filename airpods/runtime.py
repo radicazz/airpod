@@ -54,6 +54,8 @@ class ContainerRuntime(Protocol):
         gpu_device_flag: Optional[str] = None,
         pids_limit: int = 2048,
         userns_mode: Optional[str] = None,
+        entrypoint: Optional[str] = None,
+        command: Optional[List[str]] = None,
     ) -> bool:
         """Run a container in a pod.
 
@@ -194,6 +196,8 @@ class PodmanRuntime:
         gpu_device_flag: Optional[str] = None,
         pids_limit: int = 2048,
         userns_mode: Optional[str] = None,
+        entrypoint: Optional[str] = None,
+        command: Optional[List[str]] = None,
     ) -> bool:
         try:
             return podman.run_container(
@@ -207,6 +211,8 @@ class PodmanRuntime:
                 gpu_device_flag=gpu_device_flag,
                 pids_limit=pids_limit,
                 userns_mode=userns_mode,
+                entrypoint=entrypoint,
+                command=command,
             )
         except podman.PodmanError as exc:
             raise ContainerRuntimeError(str(exc)) from exc
@@ -343,6 +349,8 @@ class DockerRuntime:
         gpu_device_flag: Optional[str] = None,
         pids_limit: int = 2048,
         userns_mode: Optional[str] = None,
+        entrypoint: Optional[str] = None,
+        command: Optional[List[str]] = None,
     ) -> bool:
         try:
             return docker.run_container(
@@ -356,6 +364,8 @@ class DockerRuntime:
                 gpu_device_flag=gpu_device_flag,
                 pids_limit=pids_limit,
                 userns_mode=userns_mode,
+                entrypoint=entrypoint,
+                command=command,
             )
         except docker.DockerError as exc:
             raise ContainerRuntimeError(str(exc)) from exc

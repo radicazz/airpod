@@ -25,7 +25,6 @@ from .common import COMMAND_ALIASES, HELP_OPTION_NAMES, check_service_availabili
 
 # Map commands to their required services
 COMMAND_DEPENDENCIES = {
-    "models": "ollama",
     "logs": "any",
     "stop": "any",
     "status": "any",

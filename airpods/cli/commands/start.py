@@ -6,7 +6,7 @@ import queue
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 import typer
@@ -24,6 +24,8 @@ from airpods.logging import console, status_spinner
 from airpods.system import detect_gpu, detect_cuda_compute_capability
 from airpods.cuda import select_cuda_version, get_cuda_info_display
 from airpods.services import ServiceSpec
+from airpods.configuration import get_config
+from airpods import gguf, state
 
 from ..common import (
     COMMAND_CONTEXT,
@@ -318,6 +320,7 @@ def register(app: typer.Typer) -> CommandMap:
 
         # Only process services that need to be started
         specs_to_start = needs_start
+        config = get_config()
 
         # Show GPU status (verbose only)
         if verbose:
@@ -326,6 +329,11 @@ def register(app: typer.Typer) -> CommandMap:
                 console.print(f"GPU: [ok]enabled[/] ({gpu_detail})")
             else:
                 console.print(f"GPU: [muted]not detected[/] ({gpu_detail})")
+            if gpu_available and manager.gpu_device_flag is None:
+                console.print(
+                    "[warn]GPU passthrough not configured for the current runtime. "
+                    "Set up NVIDIA CDI or force CPU.[/]"
+                )
 
             # Show CUDA detection info if ComfyUI is being started
             comfyui_specs = [s for s in specs_to_start if s.name == "comfyui"]
@@ -358,15 +366,84 @@ def register(app: typer.Typer) -> CommandMap:
         failed_services = []
         timeout_services = []
 
+        def _effective_spec(spec: ServiceSpec) -> ServiceSpec:
+            gpu_passthrough_ready = manager.gpu_device_flag is not None
+            use_cpu_image = force_cpu or not gpu_available or not gpu_passthrough_ready
+            if (
+                spec.name == "llamacpp"
+                and use_cpu_image
+                and spec.cpu_image
+                and spec.cpu_image != spec.image
+            ):
+                return replace(
+                    spec,
+                    image=spec.cpu_image,
+                    needs_gpu=False,
+                    force_cpu=True,
+                )
+            return spec
+
+        specs_for_download = [_effective_spec(spec) for spec in specs_to_start]
+
+        # Validate llama.cpp model presence before pulling images.
+        needs_llamacpp = any(spec.name == "llamacpp" for spec in specs_to_start)
+        llamacpp_cfg = config.services.get("llamacpp") if needs_llamacpp else None
+        if llamacpp_cfg:
+            model_arg = None
+            if llamacpp_cfg.command_args:
+                model_arg = llamacpp_cfg.command_args.get("model")
+            if isinstance(model_arg, str) and model_arg.startswith("/models/"):
+                rel = model_arg[len("/models/") :]
+                host_models = state.resolve_volume_path("airpods_models/gguf")
+                model_path = host_models / rel
+                if not model_path.exists():
+                    console.print(f"[warn]llamacpp model not found: {model_path}[/]")
+                    if llamacpp_cfg.default_model_url:
+                        console.print(
+                            "[info]Default model is configured (small GGUF for most PCs).[/]"
+                        )
+                        if yes or ui.confirm_action(
+                            "Download the default model now?", default=True
+                        ):
+                            try:
+                                gguf.download_model(
+                                    llamacpp_cfg.default_model_url, name=rel
+                                )
+                                console.print(
+                                    f"[ok]Downloaded default model to {model_path}[/]"
+                                )
+                            except Exception as exc:
+                                console.print(
+                                    f"[error]Failed to download default model: {exc}[/]"
+                                )
+                                raise typer.Exit(code=1)
+                        else:
+                            console.print(
+                                "[info]Download a GGUF file into the store, then retry:[/]"
+                            )
+                            console.print(
+                                "[info]  airpods models gguf pull <url> --name "
+                                f"{rel}[/]"
+                            )
+                            raise typer.Exit(code=1)
+                    else:
+                        console.print(
+                            "[info]Download a GGUF file into the store, then retry:[/]"
+                        )
+                        console.print(
+                            f"[info]  airpods models gguf pull <url> --name {rel}[/]"
+                        )
+                        raise typer.Exit(code=1)
+
         # Check for images that need to be downloaded and confirm with user
         if not yes:
-            if not _confirm_image_downloads(specs_to_start):
+            if not _confirm_image_downloads(specs_for_download):
                 console.print("[warn]Download cancelled by user[/]")
                 raise typer.Exit(code=0)
 
         # Pull images with live progress so long pulls don't feel like a hang.
         _pull_images_with_progress(
-            specs_to_start, max_concurrent=max_concurrent_pulls, verbose=verbose
+            specs_for_download, max_concurrent=max_concurrent_pulls, verbose=verbose
         )
 
         # Start services with simple logging
@@ -376,8 +453,24 @@ def register(app: typer.Typer) -> CommandMap:
 
             try:
                 with status_spinner(f"Launching {spec.name}"):
+                    effective_spec = _effective_spec(spec)
+                    if effective_spec is not spec:
+                        if force_cpu:
+                            message = "llamacpp: forcing CPU image."
+                        elif not gpu_available:
+                            message = (
+                                "llamacpp GPU requested but no GPU detected; "
+                                "falling back to CPU image."
+                            )
+                        else:
+                            message = (
+                                "llamacpp GPU passthrough not configured; "
+                                "falling back to CPU image."
+                            )
+                        console.print(f"[warn]{message}[/]")
+
                     manager.start_service(
-                        spec,
+                        effective_spec,
                         gpu_available=gpu_available,
                         force_cpu_override=force_cpu,
                     )
@@ -548,7 +641,6 @@ def register(app: typer.Typer) -> CommandMap:
         ):
             from airpods import ollama as ollama_module
             from airpods.cli.common import get_ollama_port
-            from airpods.configuration import get_config
 
             config = get_config()
             auto_pull = config.services.get("ollama", None)
@@ -667,10 +759,14 @@ def _confirm_image_downloads(specs: list[ServiceSpec]) -> bool:
     console.print()
 
     # Show total and available space
-    if total_bytes > 0:
+    if total_bytes > 0 and has_unknown_sizes:
+        console.print(
+            f"Total download: [yellow]at least {_format_size(total_bytes)}[/] (some sizes unknown)"
+        )
+    elif total_bytes > 0:
         console.print(f"Total download: [yellow]{_format_size(total_bytes)}[/]")
     elif has_unknown_sizes:
-        console.print("Total download: [dim]calculating...[/]")
+        console.print("Total download: [dim]unknown (size lookup failed)[/]")
 
     if stat:
         available = stat.free
@@ -755,7 +851,6 @@ def _pull_images_with_progress(
     with Progress(
         SpinnerColumn(style="accent"),
         TextColumn("{task.fields[service]}", style="cyan", justify="right"),
-        BarColumn(bar_width=None),
         TextColumn("{task.fields[status]}", style="muted", markup=True),
         TextColumn("{task.fields[transfer]}", style="dim", justify="right"),
         TimeElapsedColumn(),
@@ -822,9 +917,21 @@ def _pull_images_with_progress(
                 future.result()
 
         if failures:
-            if verbose:
-                for name, detail in failures:
-                    if detail:
-                        console.print(f"[error]{name} pull error:[/] {detail}")
+            for name, detail in failures:
+                if detail:
+                    trimmed = detail.strip()
+                    if len(trimmed) > 500:
+                        trimmed = f"{trimmed[:500]}…"
+                    console.print(f"[error]{name} pull error:[/] {trimmed}")
+                    if (
+                        "manifest unknown" in trimmed
+                        and "llama.cpp:server-cuda" in trimmed
+                    ):
+                        console.print(
+                            "[info]Tip: switch to ghcr.io/ggml-org/llama.cpp:server "
+                            "and let airpods derive the CUDA tag.[/]"
+                        )
+                else:
+                    console.print(f"[error]{name} pull error:[/] unknown error")
             console.print("[error]✗ Failed to pull one or more images[/]")
             raise typer.Exit(code=1)
