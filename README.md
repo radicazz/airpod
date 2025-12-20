@@ -17,6 +17,7 @@ Here's a few important features:
 The following services are currently supported:
 
 - [Ollama](https://github.com/ollama/ollama) - Language & Vision models for text, coding, tolling and more.
+- [Llama](https://github.com/ggml-org/llama.cpp) - Lightweight C/C++ LLM inference with GGUF model support.
 - [Open WebUI](https://github.com/open-webui/open-webui)  -  Feature-packed front-end chat with multi-model support.
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI) - Mature node-based UI for image generation workflows.
 
