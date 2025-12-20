@@ -64,6 +64,32 @@ jobs:
             RANGE="${PREV_TAG}..HEAD"
           fi
 
+          sanitize_subject() {
+            printf '%s' "$1" | sed -e 's/[\\*_<>\`]/\\&/g'
+          }
+
+          add_entry() {
+            local var_name="$1"
+            local entry="$2"
+            if [ -z "${!var_name}" ]; then
+              printf -v "${var_name}" '%s' "${entry}"
+            else
+              printf -v "${var_name}" '%s\n%s' "${!var_name}" "${entry}"
+            fi
+          }
+
+          append_section() {
+            local title="$1"
+            local body="$2"
+            if [ -n "${body}" ]; then
+              if [ -n "${CHANGES}" ]; then
+                printf -v CHANGES '%s\n\n### %s\n%s' "${CHANGES}" "${title}" "${body}"
+              else
+                printf -v CHANGES '### %s\n%s' "${title}" "${body}"
+              fi
+            fi
+          }
+
           # Build grouped changelog (by conventional commit prefix)
           FEATS=""
           FIXES=""
@@ -74,45 +100,29 @@ jobs:
           OTHER=""
 
           while IFS='|' read -r SUBJECT HASH; do
-            ENTRY="- ${SUBJECT} ([${HASH}](https://github.com/${{ github.repository }}/commit/${HASH}))"
+            SAFE_SUBJECT=$(sanitize_subject "${SUBJECT}")
+            ENTRY="- ${SAFE_SUBJECT} ([${HASH}](https://github.com/${{ github.repository }}/commit/${HASH}))"
             PREFIX=$(echo "${SUBJECT}" | sed -E 's/^([a-zA-Z0-9_-]+).*/\1/' | tr '[:upper:]' '[:lower:]')
 
             case "${PREFIX}" in
-              feat) FEATS="${FEATS}\n${ENTRY}" ;;
-              fix) FIXES="${FIXES}\n${ENTRY}" ;;
-              docs) DOCS="${DOCS}\n${ENTRY}" ;;
-              refactor) REFACTOR="${REFACTOR}\n${ENTRY}" ;;
-              chore) CHORE="${CHORE}\n${ENTRY}" ;;
-              test|tests) TESTS="${TESTS}\n${ENTRY}" ;;
-              *) OTHER="${OTHER}\n${ENTRY}" ;;
+              feat) add_entry FEATS "${ENTRY}" ;;
+              fix) add_entry FIXES "${ENTRY}" ;;
+              docs) add_entry DOCS "${ENTRY}" ;;
+              refactor) add_entry REFACTOR "${ENTRY}" ;;
+              chore) add_entry CHORE "${ENTRY}" ;;
+              test|tests) add_entry TESTS "${ENTRY}" ;;
+              *) add_entry OTHER "${ENTRY}" ;;
             esac
           done < <(git log ${RANGE} --pretty=format:"%s|%h" --reverse)
 
           CHANGES=""
-          if [ -n "${FEATS}" ]; then
-            CHANGES="${CHANGES}### Features\n${FEATS}\n\n"
-          fi
-          if [ -n "${FIXES}" ]; then
-            CHANGES="${CHANGES}### Fixes\n${FIXES}\n\n"
-          fi
-          if [ -n "${DOCS}" ]; then
-            CHANGES="${CHANGES}### Docs\n${DOCS}\n\n"
-          fi
-          if [ -n "${REFACTOR}" ]; then
-            CHANGES="${CHANGES}### Refactor\n${REFACTOR}\n\n"
-          fi
-          if [ -n "${CHORE}" ]; then
-            CHANGES="${CHANGES}### Chore\n${CHORE}\n\n"
-          fi
-          if [ -n "${TESTS}" ]; then
-            CHANGES="${CHANGES}### Tests\n${TESTS}\n\n"
-          fi
-          if [ -n "${OTHER}" ]; then
-            CHANGES="${CHANGES}### Other\n${OTHER}\n\n"
-          fi
-
-          # Trim trailing whitespace/newlines
-          CHANGES="$(printf "%s" "${CHANGES}")"
+          append_section "Features" "${FEATS}"
+          append_section "Fixes" "${FIXES}"
+          append_section "Docs" "${DOCS}"
+          append_section "Refactor" "${REFACTOR}"
+          append_section "Chore" "${CHORE}"
+          append_section "Tests" "${TESTS}"
+          append_section "Other" "${OTHER}"
 
           # Create changelog content
           cat >> $GITHUB_STEP_SUMMARY << EOF
@@ -127,6 +137,14 @@ jobs:
             echo "${CHANGES}"
             echo "EOF"
           } >> $GITHUB_OUTPUT
+
+          # Smoke check: show changelog in job log for quick verification
+          {
+            echo "Changelog preview:"
+            echo "----------------------------------------"
+            printf '%s\n' "${CHANGES}"
+            echo "----------------------------------------"
+          }
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
