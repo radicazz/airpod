@@ -16,9 +16,12 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `list` (aliases: `ls`): Show installed models with sizes
   - `remove <model>`: Delete a local model
 - `workflows`: ComfyUI workflow and model utilities:
-  - `list` (aliases: `ls`): List saved workflow JSON files
+  - `add [source]`: Import workflow JSON files from local paths, URLs, or repo (plugins/comfyui/workflows). Auto-detects and copies companion TOML mapping files. When no source is specified, lists available workflows from repo. Supports `--sync` to automatically download models after import and `--overwrite` to replace existing workflows.
+  - `list` (aliases: `ls`): List saved workflow JSON files with model info
   - `sync <workflow>`: Install missing models for a workflow
   - `pull <url>`: Download a single model file
+  - `delete <workflow>` (alias): Remove a saved workflow JSON file (alias for `remove`)
+  - `remove <workflow>`: Remove a saved workflow JSON file
   - `path`: Show workspace/workflows/models paths
   - `api`: Show API endpoints
 - `backup`: Create compressed archive of configs, Open WebUI database, plugins, and Ollama metadata (not model binaries). Supports custom destination, filename, and optional SQL dump.
@@ -74,7 +77,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
 - Secrets: Open WebUI secret persisted at `$AIRPODS_HOME/configs/webui_secret` (or `$XDG_CONFIG_HOME/airpods/configs/webui_secret` or `~/.config/airpods/configs/webui_secret`) during `start` when Open WebUI is enabled, injected via the `needs_webui_secret` flag.
 - Networking: All services use host networking. Open WebUI targets Ollama via `http://localhost:11434` (configurable via templates).
 - Configuration: Optional `config.toml` in `configs/` subdirectory at `$AIRPODS_HOME` or XDG paths; deep-merged with defaults. All airpods configuration files (config.toml, webui_secret, etc.) are stored together in the `configs/` subdirectory.
-- Plugins: Open WebUI plugins live in `plugins/open-webui/` and are synced to `webui_plugins` volume during `start`. ComfyUI custom nodes live in `plugins/comfyui/` and are synced to `comfyui_custom_nodes` volume during `start`. Both support directory-based packages and single-file modules.
+- Plugins: Open WebUI plugins live in `plugins/open-webui/` and are synced to `webui_plugins` volume during `start`. ComfyUI custom nodes live in `plugins/comfyui/custom_nodes/` and are synced to `comfyui_custom_nodes` volume during `start`. Both support directory-based packages and single-file modules.
 
 ## Testing Approach
 - Unit tests mock subprocess interactions to validate command flow and flags.

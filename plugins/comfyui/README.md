@@ -1,15 +1,29 @@
-# ComfyUI Custom Nodes
+# ComfyUI Plugins
 
-This directory contains custom nodes that will be automatically synced to ComfyUI's `custom_nodes` directory when you run `airpods start`. Any user nodes you place here will be copied into ComfyUI on sync.
+This directory contains ComfyUI custom nodes and workflows that are part of the airpods project.
 
 ## Structure
+
+```
+plugins/comfyui/
+├── custom_nodes/         # Custom nodes synced to ComfyUI
+│   ├── comfyui-gguf/    # GGUF support (submodule)
+│   └── comfyui-airpods/  # Airpods integration nodes
+└── workflows/           # Example workflows with model mappings
+    ├── flux-dev-gguf-simple.json
+    └── flux-dev-gguf-simple.toml
+```
+
+## Custom Nodes
+
+Custom nodes in `custom_nodes/` are automatically synced to ComfyUI's `custom_nodes` directory when you run `airpods start comfyui`.
 
 Custom nodes can be in two formats:
 
 ### 1. Directory-based packages (recommended)
 Directories with an `__init__.py` file:
 ```
-plugins/comfyui/
+plugins/comfyui/custom_nodes/
 ├── my_custom_node/
 │   ├── __init__.py       # Required - marks this as a Python package
 │   ├── node.py           # Your node implementation
@@ -17,13 +31,13 @@ plugins/comfyui/
 ```
 
 ### 2. Single-file custom nodes
-Simple `.py` files placed directly in this directory:
+Simple `.py` files placed directly in `custom_nodes/`:
 ```
-plugins/comfyui/
+plugins/comfyui/custom_nodes/
 ├── simple_node.py
 ```
 
-## Syncing
+### Syncing
 
 Custom nodes are automatically synced when you run:
 ```bash
@@ -35,6 +49,38 @@ The sync process:
 - Copies all single `.py` files
 - Removes old custom nodes that no longer exist in source (when `prune=True`)
 - Only updates files that have changed (based on modification time)
+
+## Workflows
+
+The `workflows/` directory contains example workflows with companion TOML files that map model filenames to download URLs.
+
+### Importing Workflows
+
+Use the `airpods workflows add` command to import workflows into your ComfyUI workspace:
+
+```bash
+# List available workflows
+airpods workflows add
+
+# Import a workflow from the repo
+airpods workflows add flux-dev-gguf-simple
+
+# Import and automatically download required models
+airpods workflows add flux-dev-gguf-simple --sync
+```
+
+### Workflow Format
+
+Each workflow consists of:
+- **JSON file**: ComfyUI workflow in prompt or UI format
+- **TOML file** (optional): Model mapping with filenames, folders, and download URLs
+
+Example TOML mapping:
+```toml
+[models."model-name.safetensors"]
+url = "https://huggingface.co/org/repo/resolve/main/model.safetensors"
+folder = "checkpoints"
+```
 
 ## Notes
 

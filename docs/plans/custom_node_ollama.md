@@ -1,6 +1,6 @@
 # docs/plans/custom_node_ollama
 
-**STATUS:** IMPLEMENTED (merged into comfyui_airpods_tools)
+**STATUS:** IMPLEMENTED (merged into comfyui-airpods)
 
 ## Quick Answer: API Style
 
@@ -11,11 +11,11 @@ Ollama exposes its own HTTP API by default (e.g., `/api/generate`, `/api/chat`, 
 Provide ComfyUI nodes that talk to a local Ollama instance over HTTP so models pulled by Ollama can be used inside ComfyUI workflows.
 
 This plan is now merged into a single custom-node package that also includes llama.cpp nodes:
-`plugins/comfyui/comfyui_airpods_tools/`.
+`plugins/comfyui/custom_nodes/comfyui-airpods/`.
 
 ## Package Layout
 
-- Path: `plugins/comfyui/comfyui_airpods_tools/`
+- Path: `plugins/comfyui/custom_nodes/comfyui-airpods/`
 - Files:
   - `__init__.py` (exports node mappings)
   - `nodes.py` (node implementations for llama.cpp + Ollama)
@@ -137,7 +137,7 @@ Embeddings:
 
 ## Packaging + Sync
 
-- The `airpods start` workflow should sync `plugins/comfyui/comfyui_airpods_tools/` into the `comfyui_custom_nodes` bind mount (consistent with other plugin sync).
+- The `airpods start` workflow should sync `plugins/comfyui/custom_nodes/comfyui-airpods/` into the `comfyui_custom_nodes` bind mount (consistent with other plugin sync).
 - The node package contains no compiled binaries and should run in the base ComfyUI image.
 
 ## Testing Plan

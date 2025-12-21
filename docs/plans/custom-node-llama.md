@@ -1,17 +1,17 @@
 # docs/plans/custom_node_llama
 
-**STATUS:** IMPLEMENTED (merged into comfyui_airpods_tools)
+**STATUS:** IMPLEMENTED (merged into comfyui-airpods)
 
 ## Purpose
 
 Provide ComfyUI nodes that talk to the llama.cpp OpenAI-compatible HTTP API, enabling GGUF models to be used inside ComfyUI workflows without `llama-cpp-python`.
 
 This plan is now merged into a single custom-node package that also includes Ollama nodes:
-`plugins/comfyui/comfyui_airpods_tools/`.
+`plugins/comfyui/custom_nodes/comfyui-airpods/`.
 
 ## Package Layout
 
-- Path: `plugins/comfyui/comfyui_airpods_tools/`
+- Path: `plugins/comfyui/custom_nodes/comfyui-airpods/`
 - Files:
   - `__init__.py` (exports node mappings)
   - `nodes.py` (node implementations for llama.cpp + Ollama)
@@ -135,7 +135,7 @@ Embeddings:
 
 ## Packaging + Sync
 
-- The `airpods start` workflow should sync `plugins/comfyui/comfyui_airpods_tools/` into the `comfyui_custom_nodes` bind mount (consistent with other plugin sync).
+- The `airpods start` workflow should sync `plugins/comfyui/custom_nodes/comfyui-airpods/` into the `comfyui_custom_nodes` bind mount (consistent with other plugin sync).
 - The node package contains no compiled binaries and should run in the base ComfyUI image.
 
 ## Testing Plan

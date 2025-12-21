@@ -96,7 +96,7 @@ def get_comfyui_plugins_source_dir() -> Path:
     if source_root is None:
         # When installed as a package, fall back to the site-packages root
         source_root = Path(__file__).resolve().parent.parent
-    return source_root / "plugins" / "comfyui"
+    return source_root / "plugins" / "comfyui" / "custom_nodes"
 
 
 def get_comfyui_plugins_target_dir() -> Path:

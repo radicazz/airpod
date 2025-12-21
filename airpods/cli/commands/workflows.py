@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import difflib
 import re
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,8 +25,10 @@ from rich.progress import (
     TimeElapsedColumn,
     TransferSpeedColumn,
 )
+from rich.table import Table
 
 from airpods import config as config_module
+from airpods import paths
 from airpods.logging import console
 
 from ..common import COMMAND_CONTEXT
@@ -839,6 +842,186 @@ def _resolve_workflow_path_restricted(workflow: str) -> Path:
     raise typer.BadParameter(f"workflow not found: {workflow}")
 
 
+def _discover_repo_workflows() -> list[Path]:
+    """Find workflow JSON files in the repo's plugins/comfyui/workflows directory."""
+    repo_root = paths.detect_repo_root()
+    if not repo_root:
+        return []
+    workflows_dir = repo_root / "plugins" / "comfyui" / "workflows"
+    if not workflows_dir.exists():
+        return []
+    return sorted(workflows_dir.glob("*.json"))
+
+
+@workflows_app.command(name="add", context_settings=COMMAND_CONTEXT)
+def add_cmd(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+    source: Optional[str] = typer.Argument(
+        None, help="Workflow source: file path, URL, or repo workflow name."
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Overwrite existing workflow if present."
+    ),
+    sync: bool = typer.Option(
+        False, "--sync", help="Run sync after importing to download models."
+    ),
+) -> None:
+    """Import workflow JSON files from local paths, URLs, or repo workflows.
+
+    If no source is provided, displays available workflows from plugins/comfyui/workflows.
+
+    Examples:
+        airpods workflows add flux-dev-gguf-simple
+        airpods workflows add /path/to/workflow.json
+        airpods workflows add https://example.com/workflow.json
+        airpods workflows add flux-dev-gguf-simple --sync
+    """
+    maybe_show_command_help(ctx, help_)
+
+    workflows_dir = comfyui_workflows_dir()
+    workflows_dir.mkdir(parents=True, exist_ok=True)
+
+    # No source: list available workflows from repo
+    if not source:
+        repo_workflows = _discover_repo_workflows()
+        if not repo_workflows:
+            console.print(
+                "[warn]No workflows found in plugins/comfyui/workflows/ directory[/]"
+            )
+            return
+
+        table = Table(show_header=True, show_edge=False, padding=(0, 2))
+        table.add_column("#", style="dim", justify="right", width=3)
+        table.add_column("Workflow", style="cyan")
+        table.add_column("Size", style="yellow", justify="right")
+
+        for idx, wf_path in enumerate(repo_workflows, start=1):
+            size = wf_path.stat().st_size
+            size_str = _format_bytes(size)
+            # Display without .json extension
+            display_name = wf_path.stem
+            table.add_row(str(idx), display_name, size_str)
+
+        console.print(table)
+        console.print(
+            f"\n[info]Found {len(repo_workflows)} workflow(s). "
+            "Use [accent]airpods workflows add <name>[/] to import.[/]"
+        )
+        return
+
+    # Detect source type
+    source_path = Path(source)
+    is_url = source.startswith(("http://", "https://"))
+
+    # Local file path
+    if source_path.exists() and source_path.is_file():
+        if not source.lower().endswith(".json"):
+            raise typer.BadParameter("workflow must be a .json file")
+
+        # Copy JSON file
+        dest_name = source_path.name
+        dest = workflows_dir / dest_name
+        if dest.exists() and not overwrite:
+            raise typer.BadParameter(
+                f"workflow {dest_name} already exists (use --overwrite to replace)"
+            )
+
+        shutil.copy2(source_path, dest)
+        console.print(f"[ok]✓ Imported: {dest_name}[/]")
+
+        # Check for companion TOML file
+        toml_file = source_path.with_suffix(".toml")
+        if toml_file.exists():
+            toml_dest = dest.with_suffix(".toml")
+            shutil.copy2(toml_file, toml_dest)
+            console.print(f"[ok]✓ Imported mapping: {toml_file.name}[/]")
+
+        # Run sync if requested
+        if sync:
+            console.print(f"[info]Running sync for {dest_name}...[/]")
+            ctx.invoke(sync_cmd, workflow=str(dest), yes=True)
+
+        return
+
+    # URL download
+    if is_url:
+        # Infer filename from URL
+        parsed = urlparse(source)
+        filename = Path(parsed.path).name
+        if not filename or not filename.lower().endswith(".json"):
+            filename = "workflow.json"
+
+        dest = workflows_dir / filename
+        if dest.exists() and not overwrite:
+            raise typer.BadParameter(
+                f"workflow {filename} already exists (use --overwrite to replace)"
+            )
+
+        console.print(f"[info]Downloading {source}...[/]")
+        try:
+            _download_to_path(
+                source, dest, overwrite=overwrite, timeout_s=60, retries=2
+            )
+            console.print(f"[ok]✓ Imported: {filename}[/]")
+        except DownloadError as exc:
+            console.print(f"[error]✗ Download failed: {exc}[/]")
+            raise typer.Exit(1)
+
+        # Run sync if requested
+        if sync:
+            console.print(f"[info]Running sync for {filename}...[/]")
+            ctx.invoke(sync_cmd, workflow=str(dest), yes=True)
+
+        return
+
+    # Repo workflow name
+    repo_workflows = _discover_repo_workflows()
+    if not repo_workflows:
+        raise typer.BadParameter(
+            "no workflows found in repo plugins/comfyui/workflows/ directory"
+        )
+
+    # Search for workflow by name (with or without .json)
+    search_name = source if source.lower().endswith(".json") else f"{source}.json"
+    matched = None
+    for wf_path in repo_workflows:
+        if wf_path.name.lower() == search_name.lower():
+            matched = wf_path
+            break
+
+    if not matched:
+        available = ", ".join(wf.stem for wf in repo_workflows[:5])
+        raise typer.BadParameter(
+            f"workflow '{source}' not found in repo. Available: {available}"
+        )
+
+    # Copy JSON file
+    dest_name = matched.name
+    dest = workflows_dir / dest_name
+    if dest.exists() and not overwrite:
+        raise typer.BadParameter(
+            f"workflow {dest_name} already exists (use --overwrite to replace)"
+        )
+
+    shutil.copy2(matched, dest)
+    console.print(f"[ok]✓ Imported: {dest_name}[/]")
+
+    # Check for companion TOML file
+    toml_file = matched.with_suffix(".toml")
+    toml_dest: Path | None = None
+    if toml_file.exists():
+        toml_dest = dest.with_suffix(".toml")
+        shutil.copy2(toml_file, toml_dest)
+        console.print(f"[ok]✓ Imported mapping: {toml_file.name}[/]")
+
+    # Run sync if requested
+    if sync:
+        console.print(f"[info]Running sync for {dest_name}...[/]")
+        mapping_arg = toml_dest if toml_dest is not None else None
+        ctx.invoke(sync_cmd, workflow=str(dest), mapping=mapping_arg, yes=True)
+
+
 @workflows_app.command(name="sync", context_settings=COMMAND_CONTEXT)
 def sync_cmd(
     ctx: typer.Context,
@@ -1329,4 +1512,4 @@ def pull_cmd(
 
 def register(app: typer.Typer) -> CommandMap:
     app.add_typer(workflows_app, name="workflows")
-    return {}
+    return {"workflows delete": remove_cmd}

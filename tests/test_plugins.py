@@ -201,7 +201,7 @@ def test_resolve_plugin_owner_admin_mode_uses_system_when_missing(
 def test_sync_comfyui_plugins_copies_directories(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    source_dir = tmp_path / "plugins" / "comfyui"
+    source_dir = tmp_path / "plugins" / "comfyui" / "custom_nodes"
     source_dir.mkdir(parents=True)
 
     # Create a directory-based custom node (package with __init__.py)
@@ -233,7 +233,7 @@ def test_sync_comfyui_plugins_copies_directories(
 def test_sync_comfyui_plugins_prunes_removed_items(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    source_dir = tmp_path / "plugins" / "comfyui"
+    source_dir = tmp_path / "plugins" / "comfyui" / "custom_nodes"
     source_dir.mkdir(parents=True)
 
     # Create one custom node in source
@@ -265,7 +265,7 @@ def test_sync_comfyui_plugins_prunes_removed_items(
 def test_sync_comfyui_plugins_skips_non_package_dirs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    source_dir = tmp_path / "plugins" / "comfyui"
+    source_dir = tmp_path / "plugins" / "comfyui" / "custom_nodes"
     source_dir.mkdir(parents=True)
 
     # Create a directory without __init__.py (not a package)
