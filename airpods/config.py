@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Dict, List, Optional
 
 from airpods import state
@@ -236,6 +237,21 @@ def _service_spec_from_config(
         for key, value in provider_env.items():
             if key not in env:
                 env[key] = value
+
+        custom_nodes_target = None
+        for mount in volumes:
+            if mount.target.endswith("/custom_nodes"):
+                custom_nodes_target = mount.target
+                break
+        if custom_nodes_target:
+            site_packages = f"{custom_nodes_target.rstrip('/')}/.airpods/site-packages"
+            existing = env.get("PYTHONPATH")
+            if existing:
+                parts = [p for p in existing.split(os.pathsep) if p]
+                if site_packages not in parts:
+                    env["PYTHONPATH"] = existing + os.pathsep + site_packages
+            else:
+                env["PYTHONPATH"] = site_packages
 
     # Conditionally inject Ollama configuration for open-webui service
     if name == "open-webui" and service.auto_configure_ollama:

@@ -258,6 +258,7 @@ def _maybe_install_custom_node_requirements(
         return
 
     container_dir = _comfyui_custom_nodes_container_dir(comfyui_spec)
+    target_dir = f"{container_dir.rstrip('/')}/.airpods/site-packages"
     requirements = custom_nodes_module.collect_requirements(
         nodes, container_custom_nodes_dir=container_dir
     )
@@ -269,6 +270,7 @@ def _maybe_install_custom_node_requirements(
             runtime=manager.runtime,
             container_name=comfyui_spec.container,
             requirements=requirements,
+            target_dir=target_dir,
         )
 
     installed = sum(1 for result in results if result.action == "installed")

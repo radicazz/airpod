@@ -244,14 +244,26 @@ def install_requirements(
     runtime,
     container_name: str,
     requirements: Iterable[CustomNodeRequirement],
+    target_dir: str,
 ) -> list[CustomNodeResult]:
     """Install requirements inside a running container."""
     results: list[CustomNodeResult] = []
+    install_target = target_dir.rstrip("/")
     for req in requirements:
         try:
             result = runtime.exec_in_container(
                 container_name,
-                ["python3", "-m", "pip", "install", "-r", req.container_path],
+                [
+                    "python3",
+                    "-m",
+                    "pip",
+                    "install",
+                    "-r",
+                    req.container_path,
+                    "--target",
+                    install_target,
+                    "--upgrade",
+                ],
                 capture_output=True,
                 text=True,
                 timeout=300,
