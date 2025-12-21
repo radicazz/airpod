@@ -164,7 +164,7 @@ def build_messages(system: str | None, user: str | None) -> list[dict[str, str]]
     messages: list[dict[str, str]] = []
     if system:
         messages.append({"role": "system", "content": system})
-    if user:
+    if user is not None:
         messages.append({"role": "user", "content": user})
     return messages
 

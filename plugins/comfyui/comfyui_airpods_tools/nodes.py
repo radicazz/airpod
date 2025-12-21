@@ -157,9 +157,7 @@ class LlamaChatCompletion:
         model: str | None = None,
         base_url: str | None = None,
     ):
-        messages = client.build_messages(
-            client.coerce_non_empty(system), client.coerce_non_empty(user)
-        )
+        messages = client.build_messages(client.coerce_non_empty(system), user)
         parsed_messages = client.parse_json_input(messages_json, "messages_json")
         if parsed_messages is not None:
             messages = client.ensure_list(parsed_messages, "messages_json")
@@ -292,9 +290,7 @@ class OllamaChat:
         if stream:
             raise ValueError("streaming is not supported in this node")
 
-        messages = client.build_messages(
-            client.coerce_non_empty(system), client.coerce_non_empty(user)
-        )
+        messages = client.build_messages(client.coerce_non_empty(system), user)
         parsed_messages = client.parse_json_input(messages_json, "messages_json")
         if parsed_messages is not None:
             messages = client.ensure_list(parsed_messages, "messages_json")
