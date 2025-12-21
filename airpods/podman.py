@@ -346,6 +346,9 @@ def exec_in_container(
     container: str, command: List[str], **kwargs
 ) -> subprocess.CompletedProcess[str]:
     """Execute a command inside a running container."""
+    if "capture_output" in kwargs:
+        kwargs["capture"] = kwargs.pop("capture_output")
+    kwargs.pop("text", None)
     args = ["exec", container] + command
     try:
         return _run(args, **kwargs)
