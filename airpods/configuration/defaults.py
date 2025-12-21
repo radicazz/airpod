@@ -43,7 +43,11 @@ DEFAULT_CONFIG_DICT = {
                 "data": {
                     "source": "bind://airpods_ollama_data",
                     "target": "/root/.ollama",
-                }
+                },
+                "llamacpp_models": {
+                    "source": "bind://airpods_models/gguf",
+                    "target": "/airpods/llamacpp",
+                },
             },
             "gpu": {"enabled": True, "force_cpu": False},
             "health": {"path": "/api/tags", "expected_status": [200, 299]},
@@ -118,7 +122,11 @@ DEFAULT_CONFIG_DICT = {
                 "models": {
                     "source": "bind://airpods_models/gguf",
                     "target": "/models",
-                }
+                },
+                "ollama_models": {
+                    "source": "bind://airpods_ollama_data",
+                    "target": "/airpods/ollama",
+                },
             },
             "gpu": {"enabled": True, "force_cpu": False},
             "health": {"path": "/health", "expected_status": [200, 299]},

@@ -15,7 +15,7 @@
   - Open WebUI (OpenAI backend config)
   - ComfyUI custom nodes (HTTP client)
 - Replaces the need to embed `llama-cpp-python` into the ComfyUI container image, reducing image complexity and GPU build risk.
-- Stores GGUF models in a dedicated volume (`airpods_models/gguf`) that is not shared with Ollama’s internal storage format.
+- Stores GGUF models in a dedicated volume (`airpods_models/gguf`) and mounts it into Ollama at `/airpods/llamacpp` for cross-access (formats still differ).
 
 ## Implementation Status (Current)
 
@@ -113,6 +113,8 @@ force_cpu = true
 
 - Bind-mounted GGUF store: `bind://airpods_models/gguf` → `$AIRPODS_HOME/volumes/airpods_models/gguf`
 - Container mount: `/models`
+  - Also mounted into Ollama at `/airpods/llamacpp` for cross-access.
+  - Ollama’s data volume is mounted into llama.cpp at `/airpods/ollama` for cross-access.
 
 This keeps GGUF artifacts separate from Ollama and ComfyUI models.
 
