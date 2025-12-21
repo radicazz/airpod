@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -693,6 +694,25 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} PB"
 
 
+def _parse_size_fragment(value: str, unit: str) -> int:
+    multipliers = {
+        "B": 1,
+        "KB": 1024,
+        "MB": 1024**2,
+        "GB": 1024**3,
+        "TB": 1024**4,
+        "PB": 1024**5,
+    }
+    try:
+        num = float(value)
+    except ValueError:
+        return 0
+    factor = multipliers.get(unit.upper())
+    if factor is None:
+        return 0
+    return int(num * factor)
+
+
 def _confirm_image_downloads(specs: list[ServiceSpec]) -> bool:
     """Check for images to download and confirm with user.
 
@@ -810,6 +830,48 @@ def _pull_images_with_progress(
                 if line:
                     yield line
 
+    def _parse_download_progress(line: str) -> tuple[str, int, int | None] | None:
+        # Expected patterns (docker/podman):
+        # <layer>: Downloading 12.3MB/45.6MB
+        # <layer>: Downloading [==>] 12.3MB/45.6MB
+        match = re.match(r"^(?P<layer>[0-9a-f]{6,}):", line, re.IGNORECASE)
+        if not match:
+            return None
+        layer = match.group("layer")
+        size_match = re.search(
+            r"(?P<cur>\d+(?:\.\d+)?)\s*(?P<cur_unit>[kKmMgGtTpP]?B)\s*/\s*"
+            r"(?P<total>\d+(?:\.\d+)?)\s*(?P<total_unit>[kKmMgGtTpP]?B)",
+            line,
+        )
+        if not size_match:
+            return None
+        current = _parse_size_fragment(
+            size_match.group("cur"), size_match.group("cur_unit")
+        )
+        total = _parse_size_fragment(
+            size_match.group("total"), size_match.group("total_unit")
+        )
+        if current <= 0:
+            return None
+        return layer, current, total if total > 0 else None
+
+    def _is_noise_line(line: str) -> bool:
+        lower = line.lower()
+        return lower.startswith(
+            (
+                "copying blob",
+                "copying",
+                "pulling fs layer",
+                "waiting",
+                "extracting",
+                "download complete",
+                "pull complete",
+                "already exists",
+                "status:",
+                "digest:",
+            )
+        )
+
     def _pull_one(spec: ServiceSpec, task_id: int) -> None:
         start = time.perf_counter()
         events.put(_PullEvent("start", task_id))
@@ -859,6 +921,8 @@ def _pull_images_with_progress(
     ) as progress:
         tasks: dict[int, ServiceSpec] = {}
         task_ids: dict[str, int] = {}
+        progress_bytes: dict[int, dict[str, int]] = {}
+        progress_totals: dict[int, dict[str, int]] = {}
 
         for spec in specs:
             task_id = progress.add_task(
@@ -870,6 +934,8 @@ def _pull_images_with_progress(
             )
             tasks[task_id] = spec
             task_ids[spec.name] = task_id
+            progress_bytes[task_id] = {}
+            progress_totals[task_id] = {}
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
@@ -889,6 +955,26 @@ def _pull_images_with_progress(
                 elif event.kind == "line":
                     # Keep status compact; podman emits a lot of noise.
                     line = event.payload
+                    parsed = _parse_download_progress(line)
+                    if parsed is not None:
+                        layer, current, total = parsed
+                        progress_bytes[event.task_id][layer] = current
+                        if total is not None:
+                            progress_totals[event.task_id][layer] = total
+                        downloaded = sum(progress_bytes[event.task_id].values())
+                        if downloaded > 0:
+                            total_known = sum(progress_totals[event.task_id].values())
+                            if total_known > 0:
+                                transfer = (
+                                    f"Downloaded {_format_size(downloaded)}"
+                                    f"/{_format_size(total_known)}"
+                                )
+                            else:
+                                transfer = f"Downloaded {_format_size(downloaded)}"
+                            progress.update(event.task_id, transfer=transfer)
+                        continue
+                    if _is_noise_line(line):
+                        continue
                     if len(line) > 80:
                         line = f"{line[:77]}…"
                     progress.update(event.task_id, status=line)
