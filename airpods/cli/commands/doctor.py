@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 import os
+from pathlib import Path
 
 from airpods import __version__, gpu as gpu_utils, ui
 import airpods.config as config_module
@@ -19,10 +20,37 @@ from airpods.updates import (
 )
 from airpods.cuda import select_cuda_version, get_cuda_info_display
 from airpods.paths import detect_repo_root
+from airpods.state import state_root
 
 from ..common import COMMAND_CONTEXT, DOCTOR_REMEDIATIONS, manager
 from ..help import command_help_option, maybe_show_command_help
 from ..type_defs import CommandMap
+
+_LEGACY_UI_IMPORTS = (
+    "/scripts/ui.js",
+    "/extensions/core/groupNode.js",
+    "/scripts/ui/components/buttonGroup.js",
+    "/scripts/ui/components/button.js",
+)
+
+
+def _scan_for_legacy_ui_imports(root: Path) -> list[tuple[Path, list[str]]]:
+    if not root.exists():
+        return []
+    matches: list[tuple[Path, list[str]]] = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix not in {".js", ".mjs"}:
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        hits = [pattern for pattern in _LEGACY_UI_IMPORTS if pattern in content]
+        if hits:
+            matches.append((path, hits))
+    return matches
 
 
 def register(app: typer.Typer) -> CommandMap:
@@ -132,6 +160,24 @@ def register(app: typer.Typer) -> CommandMap:
                 console.print(f"[ok]GGUF store writable: {gguf_path}[/]")
             else:
                 console.print(f"[warn]GGUF store not writable: {gguf_path}[/]")
+
+        custom_nodes_dir = state_root() / "volumes" / "comfyui_custom_nodes"
+        legacy_hits = _scan_for_legacy_ui_imports(custom_nodes_dir)
+        if legacy_hits:
+            console.print(
+                "[warn]ComfyUI custom nodes using deprecated UI imports detected:[/]"
+            )
+            for path, hits in legacy_hits:
+                try:
+                    display = path.relative_to(custom_nodes_dir)
+                except ValueError:
+                    display = path
+                console.print(
+                    f"[warn]- {display}: {', '.join(hits)}[/]"
+                )
+            console.print(
+                "[dim]Update or remove the extensions above to silence warnings.[/]"
+            )
 
         ui.success_panel("doctor complete: environment ready.")
 
