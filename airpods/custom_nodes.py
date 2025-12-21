@@ -283,69 +283,105 @@ def install_requirements(
     results: list[CustomNodeResult] = []
     install_target = target_dir.rstrip("/")
     for req in requirements:
-        try:
-            result = runtime.exec_in_container(
+
+        def run_pip(args: list[str]) -> subprocess.CompletedProcess:
+            return runtime.exec_in_container(
                 container_name,
-                [
-                    "python3",
-                    "-m",
-                    "pip",
-                    "install",
-                    "-r",
-                    req.container_path,
-                    "--target",
-                    install_target,
-                    "--upgrade",
-                ],
+                args,
                 capture_output=True,
                 text=True,
                 timeout=300,
                 check=False,
             )
+
+        def is_permission(detail: str) -> bool:
+            lowered = detail.lower()
+            return (
+                "permission denied" in lowered
+                or "errno 13" in lowered
+                or "read-only file system" in lowered
+            )
+
+        def is_externally_managed(detail: str) -> bool:
+            lowered = detail.lower()
+            return (
+                "externally-managed-environment" in lowered
+                or "externally managed" in lowered
+            )
+
+        base_args = [
+            "python3",
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            req.container_path,
+            "--target",
+            install_target,
+            "--upgrade",
+        ]
+
+        try:
+            result = run_pip(base_args)
         except Exception as exc:  # pragma: no cover - runtime-specific failures
             results.append(CustomNodeResult(req.name, req.host_path, "error", str(exc)))
             continue
 
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
-            lowered = detail.lower()
-            is_permission = (
-                "permission denied" in lowered
-                or "errno 13" in lowered
-                or "read-only file system" in lowered
-            )
-            if is_permission:
-                fallback = runtime.exec_in_container(
-                    container_name,
-                    [
-                        "python3",
-                        "-m",
-                        "pip",
-                        "install",
-                        "-r",
-                        req.container_path,
-                        "--user",
-                        "--upgrade",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                    check=False,
-                )
-                if fallback.returncode == 0:
+            if is_externally_managed(detail):
+                result = run_pip(base_args + ["--break-system-packages"])
+                if result.returncode == 0:
+                    req.marker_path.parent.mkdir(parents=True, exist_ok=True)
+                    _write_marker(req.marker_path, mode="target")
+                    results.append(
+                        CustomNodeResult(req.name, req.host_path, "installed")
+                    )
+                    continue
+                detail = (result.stderr or result.stdout or "").strip()
+
+            if is_permission(detail):
+                user_args = [
+                    "python3",
+                    "-m",
+                    "pip",
+                    "install",
+                    "-r",
+                    req.container_path,
+                    "--user",
+                    "--upgrade",
+                ]
+                fallback = run_pip(user_args)
+                if fallback.returncode != 0:
+                    fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
+                    if is_externally_managed(fallback_detail):
+                        fallback = run_pip(user_args + ["--break-system-packages"])
+                        if fallback.returncode == 0:
+                            req.marker_path.parent.mkdir(parents=True, exist_ok=True)
+                            _write_marker(
+                                req.marker_path, mode="user", container_id=container_id
+                            )
+                            results.append(
+                                CustomNodeResult(
+                                    req.name, req.host_path, "installed-user"
+                                )
+                            )
+                            continue
+                        fallback_detail = (
+                            fallback.stderr or fallback.stdout or ""
+                        ).strip()
+                    results.append(
+                        CustomNodeResult(
+                            req.name, req.host_path, "error", fallback_detail
+                        )
+                    )
+                else:
                     req.marker_path.parent.mkdir(parents=True, exist_ok=True)
                     _write_marker(
                         req.marker_path, mode="user", container_id=container_id
                     )
                     results.append(
                         CustomNodeResult(req.name, req.host_path, "installed-user")
-                    )
-                else:
-                    fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
-                    results.append(
-                        CustomNodeResult(
-                            req.name, req.host_path, "error", fallback_detail
-                        )
                     )
             else:
                 results.append(
