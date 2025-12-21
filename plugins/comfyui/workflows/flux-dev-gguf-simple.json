@@ -1,0 +1,82 @@
+{
+  "1": {
+    "inputs": {
+      "seed": 42,
+      "steps": 20,
+      "cfg": 2.5,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0,
+      "model": ["2", 0],
+      "positive": ["3", 0],
+      "negative": ["4", 0],
+      "latent_image": ["5", 0]
+    },
+    "class_type": "KSampler",
+    "title": "KSampler"
+  },
+  "2": {
+    "inputs": {
+      "unet_name": "flux1-dev-Q4_K_S.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "title": "Unet Loader (GGUF)"
+  },
+  "3": {
+    "inputs": {
+      "text": "a serene landscape with mountains and a crystal clear lake at sunset",
+      "clip": ["6", 0]
+    },
+    "class_type": "CLIPTextEncodeFlux",
+    "title": "CLIP Text Encode (Flux)"
+  },
+  "4": {
+    "inputs": {
+      "text": "",
+      "clip": ["6", 0]
+    },
+    "class_type": "CLIPTextEncodeFlux",
+    "title": "CLIP Text Encode (Flux)"
+  },
+  "5": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "title": "Empty Latent Image"
+  },
+  "6": {
+    "inputs": {
+      "clip_name1": "t5-v1_1-xxl-encoder-Q4_K_S.gguf",
+      "clip_name2": "clip_l.safetensors",
+      "type": "flux"
+    },
+    "class_type": "DualCLIPLoaderGGUF",
+    "title": "DualCLIPLoader (GGUF)"
+  },
+  "7": {
+    "inputs": {
+      "samples": ["1", 0],
+      "vae": ["8", 0]
+    },
+    "class_type": "VAEDecode",
+    "title": "VAE Decode"
+  },
+  "8": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "title": "Load VAE"
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "flux-dev-gguf",
+      "images": ["7", 0]
+    },
+    "class_type": "SaveImage",
+    "title": "Save Image"
+  }
+}
