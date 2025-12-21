@@ -1,6 +1,6 @@
 # docs/plans/custom_node_ollama
 
-**STATUS:** PLANNED - NOT IMPLEMENTED
+**STATUS:** IMPLEMENTED (merged into comfyui_airpods_tools)
 
 ## Quick Answer: API Style
 
@@ -8,14 +8,17 @@ Ollama exposes its own HTTP API by default (e.g., `/api/generate`, `/api/chat`, 
 
 ## Purpose
 
-Provide a ComfyUI custom node that talks to a local Ollama instance over HTTP so models pulled by Ollama can be used inside ComfyUI workflows.
+Provide ComfyUI nodes that talk to a local Ollama instance over HTTP so models pulled by Ollama can be used inside ComfyUI workflows.
+
+This plan is now merged into a single custom-node package that also includes llama.cpp nodes:
+`plugins/comfyui/comfyui_airpods_tools/`.
 
 ## Package Layout
 
-- Path: `plugins/comfyui/airpods_ollama/`
+- Path: `plugins/comfyui/comfyui_airpods_tools/`
 - Files:
   - `__init__.py` (exports node mappings)
-  - `nodes.py` (node implementations)
+  - `nodes.py` (node implementations for llama.cpp + Ollama)
   - `client.py` (minimal HTTP client wrapper)
   - `README.md` (usage + environment variables)
 
@@ -26,7 +29,7 @@ Provide a ComfyUI custom node that talks to a local Ollama instance over HTTP so
 - Timeout env var: `AIRPODS_OLLAMA_TIMEOUT`
   - Default: `120` (seconds)
 
-The node should allow overriding the base URL per-node input as well, with the env var as the default.
+The nodes allow overriding the base URL per-node input as well, with the env var as the default.
 
 ## Node Set
 
@@ -65,7 +68,7 @@ The node should allow overriding the base URL per-node input as well, with the e
 
 If `messages_json` is provided, it supersedes `system` + `user`.
 
-### 3) Ollama Embeddings
+### 3) Ollama Embeddings (Deferred)
 
 - **Name**: `OllamaEmbeddings`
 - **Purpose**: `/api/embeddings`
@@ -127,15 +130,14 @@ Embeddings:
 
 `__init__.py` should export:
 
-- `NODE_CLASS_MAPPINGS` with `OllamaGenerate`, `OllamaChat`, `OllamaEmbeddings`
+- `NODE_CLASS_MAPPINGS` with `OllamaGenerate`, `OllamaChat` (embeddings deferred)
 - `NODE_DISPLAY_NAME_MAPPINGS` with friendly names like:
-  - `"Ollama Generate"`
-  - `"Ollama Chat"`
-  - `"Ollama Embeddings"`
+  - `"Ollama Generate (AirPods)"`
+  - `"Ollama Chat (AirPods)"`
 
 ## Packaging + Sync
 
-- The `airpods start` workflow should sync `plugins/comfyui/airpods_ollama/` into the `comfyui_custom_nodes` bind mount (consistent with other plugin sync).
+- The `airpods start` workflow should sync `plugins/comfyui/comfyui_airpods_tools/` into the `comfyui_custom_nodes` bind mount (consistent with other plugin sync).
 - The node package contains no compiled binaries and should run in the base ComfyUI image.
 
 ## Testing Plan
@@ -146,4 +148,4 @@ Embeddings:
 
 ## Summary
 
-This node provides a dependency-light bridge from ComfyUI to the Ollama native HTTP API, enabling Ollama-hosted models to be used in workflows without embedding Ollama into the ComfyUI image.
+These nodes provide a dependency-light bridge from ComfyUI to the Ollama native HTTP API, enabling Ollama-hosted models to be used in workflows without embedding Ollama into the ComfyUI image.

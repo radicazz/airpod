@@ -1,17 +1,20 @@
 # docs/plans/custom_node_llama
 
-**STATUS:** PLANNED - NOT IMPLEMENTED
+**STATUS:** IMPLEMENTED (merged into comfyui_airpods_tools)
 
 ## Purpose
 
-Provide a ComfyUI custom node that talks to the llama.cpp OpenAI-compatible HTTP API, enabling GGUF models to be used inside ComfyUI workflows without `llama-cpp-python`.
+Provide ComfyUI nodes that talk to the llama.cpp OpenAI-compatible HTTP API, enabling GGUF models to be used inside ComfyUI workflows without `llama-cpp-python`.
+
+This plan is now merged into a single custom-node package that also includes Ollama nodes:
+`plugins/comfyui/comfyui_airpods_tools/`.
 
 ## Package Layout
 
-- Path: `plugins/comfyui/airpods_gguf/`
+- Path: `plugins/comfyui/comfyui_airpods_tools/`
 - Files:
   - `__init__.py` (exports node mappings)
-  - `nodes.py` (node implementations)
+  - `nodes.py` (node implementations for llama.cpp + Ollama)
   - `client.py` (minimal HTTP client wrapper)
   - `README.md` (usage + environment variables)
 
@@ -22,9 +25,9 @@ Provide a ComfyUI custom node that talks to the llama.cpp OpenAI-compatible HTTP
 - Timeout env var: `AIRPODS_LLAMACPP_TIMEOUT`
   - Default: `120` (seconds)
 
-The node should allow overriding the base URL per-node input as well, with the env var as the default.
+The nodes allow overriding the base URL per-node input as well, with the env var as the default.
 
-## Node Set
+## Node Set (llama.cpp)
 
 ### 1) Llama Text Completion
 
@@ -63,7 +66,7 @@ The node should allow overriding the base URL per-node input as well, with the e
 
 Note: For advanced workflows, support a JSON `messages` input (list of `{role, content}`) as an optional alternate input. If provided, it supersedes `system` + `user`.
 
-### 3) Llama Embeddings (Optional)
+### 3) Llama Embeddings (Deferred)
 
 - **Name**: `LlamaEmbeddings`
 - **Purpose**: `/v1/embeddings`
@@ -125,15 +128,14 @@ Embeddings:
 
 `__init__.py` should export:
 
-- `NODE_CLASS_MAPPINGS` with `LlamaTextCompletion`, `LlamaChatCompletion`, `LlamaEmbeddings`
+- `NODE_CLASS_MAPPINGS` with `LlamaTextCompletion`, `LlamaChatCompletion` (embeddings deferred)
 - `NODE_DISPLAY_NAME_MAPPINGS` with friendly names like:
-  - `"Llama Text Completion (GGUF)"`
-  - `"Llama Chat Completion (GGUF)"`
-  - `"Llama Embeddings (GGUF)"`
+  - `"Llama Text Completion (AirPods)"`
+  - `"Llama Chat Completion (AirPods)"`
 
 ## Packaging + Sync
 
-- The `airpods start` workflow should sync `plugins/comfyui/airpods_gguf/` into the `comfyui_custom_nodes` bind mount (consistent with other plugin sync).
+- The `airpods start` workflow should sync `plugins/comfyui/comfyui_airpods_tools/` into the `comfyui_custom_nodes` bind mount (consistent with other plugin sync).
 - The node package contains no compiled binaries and should run in the base ComfyUI image.
 
 ## Testing Plan
@@ -144,4 +146,4 @@ Embeddings:
 
 ## Summary
 
-This node provides a simple, dependency-light bridge from ComfyUI to llama.cpp’s OpenAI-compatible API, enabling GGUF LLM workflows without Python bindings inside the ComfyUI container.
+These nodes provide a simple, dependency-light bridge from ComfyUI to llama.cpp’s OpenAI-compatible API, enabling GGUF LLM workflows without Python bindings inside the ComfyUI container.
