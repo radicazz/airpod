@@ -30,6 +30,32 @@ class CustomNodeRequirement:
     marker_path: Path
 
 
+def _read_marker(marker: Path) -> dict[str, str]:
+    try:
+        content = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    if not content:
+        return {}
+    data: dict[str, str] = {}
+    for line in content.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key:
+            data[key] = value
+    return data
+
+
+def _write_marker(marker: Path, *, mode: str, container_id: str | None = None) -> None:
+    lines = [f"mode={mode}"]
+    if container_id:
+        lines.append(f"container_id={container_id}")
+    marker.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def get_custom_node_specs() -> list[CustomNodeInstall]:
     """Return enabled custom node specs from config."""
     config = get_config()
@@ -196,6 +222,7 @@ def collect_requirements(
     nodes: Iterable[CustomNodeInstall],
     *,
     container_custom_nodes_dir: str,
+    container_id: str | None = None,
 ) -> list[CustomNodeRequirement]:
     """Collect requirement files for configured nodes (host + container paths)."""
     requirements: list[CustomNodeRequirement] = []
@@ -221,7 +248,12 @@ def collect_requirements(
 
         marker = host_req.parent / ".airpods-requirements.installed"
         if marker.exists() and marker.stat().st_mtime >= host_req.stat().st_mtime:
-            continue
+            meta = _read_marker(marker)
+            if meta.get("mode") == "user":
+                if container_id and meta.get("container_id") == container_id:
+                    continue
+            else:
+                continue
 
         try:
             rel = host_req.relative_to(target_root)
@@ -245,6 +277,7 @@ def install_requirements(
     container_name: str,
     requirements: Iterable[CustomNodeRequirement],
     target_dir: str,
+    container_id: str | None = None,
 ) -> list[CustomNodeResult]:
     """Install requirements inside a running container."""
     results: list[CustomNodeResult] = []
@@ -275,10 +308,52 @@ def install_requirements(
 
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
-            results.append(CustomNodeResult(req.name, req.host_path, "error", detail))
+            lowered = detail.lower()
+            is_permission = (
+                "permission denied" in lowered
+                or "errno 13" in lowered
+                or "read-only file system" in lowered
+            )
+            if is_permission:
+                fallback = runtime.exec_in_container(
+                    container_name,
+                    [
+                        "python3",
+                        "-m",
+                        "pip",
+                        "install",
+                        "-r",
+                        req.container_path,
+                        "--user",
+                        "--upgrade",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    check=False,
+                )
+                if fallback.returncode == 0:
+                    req.marker_path.parent.mkdir(parents=True, exist_ok=True)
+                    _write_marker(
+                        req.marker_path, mode="user", container_id=container_id
+                    )
+                    results.append(
+                        CustomNodeResult(req.name, req.host_path, "installed-user")
+                    )
+                else:
+                    fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
+                    results.append(
+                        CustomNodeResult(
+                            req.name, req.host_path, "error", fallback_detail
+                        )
+                    )
+            else:
+                results.append(
+                    CustomNodeResult(req.name, req.host_path, "error", detail)
+                )
         else:
             req.marker_path.parent.mkdir(parents=True, exist_ok=True)
-            req.marker_path.touch()
+            _write_marker(req.marker_path, mode="target")
             results.append(CustomNodeResult(req.name, req.host_path, "installed"))
 
     return results

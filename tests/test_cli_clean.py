@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from airpods.cli import app
+from airpods.services import ServiceSpec, VolumeMount
 
 runner = CliRunner()
 
@@ -25,16 +26,16 @@ def mock_manager():
 
 @pytest.fixture
 def mock_resolve_services():
-    """Mock resolve_services to return test specs."""
-    with patch("airpods.cli.commands.clean.resolve_services") as mock:
+    """Mock cleanup spec resolution to return test specs."""
+    with patch("airpods.cli.commands.clean._resolve_cleanup_specs") as mock:
         spec1 = MagicMock()
         spec1.name = "ollama"
         spec1.pod = "ollama_pod"
         spec1.image = "docker.io/ollama/ollama:latest"
 
         spec2 = MagicMock()
-        spec2.name = "webui"
-        spec2.pod = "webui_pod"
+        spec2.name = "open-webui"
+        spec2.pod = "open-webui_pod"
         spec2.image = "ghcr.io/open-webui/open-webui:latest"
 
         mock.return_value = [spec1, spec2]
@@ -272,3 +273,73 @@ def test_clean_handles_filesystem_errors(
         result = runner.invoke(app, ["clean", "--configs", "--force"])
         assert result.exit_code == 0
         assert "Failed to remove" in result.stdout
+
+
+def test_clean_configs_removes_config_dirs(
+    mock_manager, mock_resolve_services, mock_podman, mock_dirs
+):
+    configs_dir = mock_dirs["configs"]
+    restore_dir = configs_dir / "restores"
+    restore_dir.mkdir()
+    (restore_dir / "state.json").write_text("test")
+
+    result = runner.invoke(app, ["clean", "--configs", "--force"])
+    assert result.exit_code == 0
+    assert not restore_dir.exists()
+
+
+def test_clean_service_scoped_volumes(mock_manager, mock_podman, mock_dirs):
+    volumes_root = mock_dirs["volumes"]
+    comfy_workspace = volumes_root / "comfyui" / "workspace"
+    comfy_workspace.mkdir(parents=True)
+    comfy_models = volumes_root / "airpods_comfyui_data"
+    comfy_models.mkdir()
+    ollama_models = volumes_root / "airpods_ollama_data"
+    ollama_models.mkdir()
+
+    spec = ServiceSpec(
+        name="comfyui",
+        pod="comfyui_pod",
+        container="comfyui-0",
+        image="docker.io/yanwk/comfyui-boot:cu128-slim",
+        volumes=[
+            VolumeMount(str(comfy_workspace), "/workspace"),
+            VolumeMount(str(comfy_models), "/root/ComfyUI/models"),
+        ],
+    )
+
+    with patch(
+        "airpods.cli.commands.clean._resolve_cleanup_specs", return_value=[spec]
+    ):
+        result = runner.invoke(app, ["clean", "comfyui", "--volumes", "--force"])
+
+    assert result.exit_code == 0
+    assert not comfy_workspace.exists()
+    assert not comfy_models.exists()
+    assert ollama_models.exists()
+
+
+def test_clean_service_scoped_configs_only_removes_webui_secret(
+    mock_manager, mock_podman, mock_dirs
+):
+    configs_dir = mock_dirs["configs"]
+    config_file = configs_dir / "config.toml"
+    secret_file = configs_dir / "webui_secret"
+    config_file.write_text("test config")
+    secret_file.write_text("secret")
+
+    spec = ServiceSpec(
+        name="open-webui",
+        pod="open-webui",
+        container="open-webui-0",
+        image="ghcr.io/open-webui/open-webui:latest",
+    )
+
+    with patch(
+        "airpods.cli.commands.clean._resolve_cleanup_specs", return_value=[spec]
+    ):
+        result = runner.invoke(app, ["clean", "open-webui", "--configs", "--force"])
+
+    assert result.exit_code == 0
+    assert config_file.exists()
+    assert not secret_file.exists()

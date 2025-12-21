@@ -17,13 +17,15 @@ from airpods.logging import console
 from airpods.runtime import ContainerRuntimeError
 from airpods.state import configs_dir, volumes_dir
 
+from airpods import config as config_module
 from ..common import (
     COMMAND_CONTEXT,
     DEFAULT_STOP_TIMEOUT,
+    SERVICE_NAME_ALIASES,
     ensure_runtime_available,
     manager,
-    resolve_services,
 )
+from ..completions import service_name_completion
 from ..help import command_help_option, maybe_show_command_help, exit_with_help
 from ..type_defs import CommandMap
 
@@ -39,6 +41,7 @@ class CleanupPlan:
         self.bind_mounts: list[tuple[Path, int]] = []  # (path, size_bytes)
         self.images: list[tuple[str, str, int]] = []  # (name, image, size_bytes)
         self.config_files: list[Path] = []
+        self.config_dirs: list[Path] = []
 
     def has_items(self) -> bool:
         """Check if there's anything to clean."""
@@ -48,6 +51,7 @@ class CleanupPlan:
             or self.bind_mounts
             or self.images
             or self.config_files
+            or self.config_dirs
         )
 
     def total_bytes(self) -> int:
@@ -99,16 +103,36 @@ def _format_bytes(bytes_count: int) -> str:
     return f"{bytes_count:.1f}TB"
 
 
+def _resolve_cleanup_specs(names: Optional[list[str]]):
+    specs = config_module.load_service_specs(include_disabled=True)
+    if not names:
+        return specs
+    normalized = []
+    for name in names:
+        lower_name = name.lower()
+        normalized.append(SERVICE_NAME_ALIASES.get(lower_name, lower_name))
+    spec_map = {spec.name: spec for spec in specs}
+    missing = [name for name in normalized if name not in spec_map]
+    if missing:
+        available = ", ".join(sorted(spec_map.keys()))
+        raise typer.BadParameter(
+            f"unknown service(s): {', '.join(missing)}. available: {available}"
+        )
+    return [spec_map[name] for name in normalized]
+
+
 def _collect_cleanup_targets(
     *,
+    specs,
     pods: bool = False,
     volumes: bool = False,
     images: bool = False,
     configs: bool = False,
+    include_orphans: bool = False,
 ) -> CleanupPlan:
-    """Scan filesystem and podman to identify what exists and should be cleaned."""
+    """Scan filesystem and runtime to identify what exists and should be cleaned."""
     plan = CleanupPlan()
-    specs = resolve_services(None)
+    service_names = {spec.name for spec in specs}
 
     if pods:
         for spec in specs:
@@ -116,34 +140,68 @@ def _collect_cleanup_targets(
                 plan.pods.append((spec.name, spec.pod))
 
     if volumes:
-        existing_volumes = manager.runtime.list_volumes()
-        plan.volumes = existing_volumes
+        existing_volumes = set(manager.runtime.list_volumes())
+        configured_volumes = set()
+        bind_sources: set[Path] = set()
+        volumes_root = volumes_dir().resolve()
+        for spec in specs:
+            for mount in getattr(spec, "volumes", []) or []:
+                if mount.is_bind_mount:
+                    source_path = Path(mount.source).resolve()
+                    try:
+                        source_path.relative_to(volumes_root)
+                    except ValueError:
+                        continue
+                    bind_sources.add(source_path)
+                else:
+                    configured_volumes.add(mount.source)
+        if include_orphans:
+            plan.volumes = sorted(existing_volumes)
+        else:
+            plan.volumes = sorted(existing_volumes.intersection(configured_volumes))
 
-        vol_dir = volumes_dir()
-        if vol_dir.exists():
-            for item in vol_dir.iterdir():
-                if not item.is_dir():
-                    continue
-                if item.name.startswith("airpods_") or item.name in {
-                    "comfyui",
-                    "webui_plugins",
-                }:
-                    size_bytes = _get_dir_size(item)
-                    plan.bind_mounts.append((item, size_bytes))
+        if include_orphans:
+            if volumes_root.exists():
+                for item in volumes_root.iterdir():
+                    if item.is_dir():
+                        bind_sources.add(item)
+
+        for path in sorted(bind_sources):
+            if not path.exists():
+                continue
+            size_bytes = _get_dir_size(path)
+            plan.bind_mounts.append((path, size_bytes))
 
     if images:
+        seen_images: set[str] = set()
         for spec in specs:
-            size_str = manager.runtime.image_size(spec.image)
-            if size_str:
-                size_bytes = _parse_image_size(size_str)
-                plan.images.append((spec.name, spec.image, size_bytes))
+            images = [spec.image]
+            cpu_image = getattr(spec, "cpu_image", None)
+            if isinstance(cpu_image, str) and cpu_image:
+                images.append(cpu_image)
+            for image in filter(None, images):
+                if image in seen_images:
+                    continue
+                seen_images.add(image)
+                size_str = manager.runtime.image_size(image)
+                if size_str:
+                    size_bytes = _parse_image_size(size_str)
+                    plan.images.append((spec.name, image, size_bytes))
 
     if configs:
         cfg_dir = configs_dir()
         if cfg_dir.exists():
-            for item in cfg_dir.iterdir():
-                if item.is_file():
-                    plan.config_files.append(item)
+            if include_orphans:
+                for item in cfg_dir.iterdir():
+                    if item.is_file():
+                        plan.config_files.append(item)
+                    elif item.is_dir():
+                        plan.config_dirs.append(item)
+            else:
+                if "open-webui" in service_names:
+                    secret = cfg_dir / "webui_secret"
+                    if secret.exists():
+                        plan.config_files.append(secret)
 
     return plan
 
@@ -185,6 +243,12 @@ def _show_cleanup_plan(plan: CleanupPlan, dry_run: bool = False) -> None:
     if plan.config_files:
         lines.append("[cyan]Config Files:[/]")
         for cfg in plan.config_files:
+            lines.append(f"  • {cfg}")
+        lines.append("")
+
+    if plan.config_dirs:
+        lines.append("[cyan]Config Directories:[/]")
+        for cfg in plan.config_dirs:
             lines.append(f"  • {cfg}")
         lines.append("")
 
@@ -262,6 +326,14 @@ def _clean_configs(plan: CleanupPlan, backup: bool = False) -> int:
             count += 1
         except OSError as exc:
             console.print(f"[warn]Failed to remove {cfg}: {exc}[/]")
+
+    for cfg_dir in sorted(plan.config_dirs, key=lambda p: len(str(p)), reverse=True):
+        try:
+            if cfg_dir.exists():
+                shutil.rmtree(cfg_dir)
+                count += 1
+        except OSError as exc:
+            console.print(f"[warn]Failed to remove {cfg_dir}: {exc}[/]")
     return count
 
 
@@ -270,6 +342,11 @@ def register(app: typer.Typer) -> CommandMap:
     def clean(
         ctx: typer.Context,
         help_: bool = command_help_option(),
+        service: Optional[list[str]] = typer.Argument(
+            None,
+            help="Services to clean (default: all).",
+            shell_complete=service_name_completion,
+        ),
         all_: bool = typer.Option(
             False,
             "--all",
@@ -292,7 +369,7 @@ def register(app: typer.Typer) -> CommandMap:
             False,
             "--configs",
             "-c",
-            help="Remove config files (config.toml, webui_secret).",
+            help="Remove config files under configs/ (config.toml, webui_secret, caches).",
         ),
         force: bool = typer.Option(
             False, "--force", "-f", help="Skip confirmation prompts."
@@ -321,11 +398,16 @@ def register(app: typer.Typer) -> CommandMap:
 
         ensure_runtime_available()
 
+        specs = _resolve_cleanup_specs(service)
+        include_orphans = service is None
+
         plan = _collect_cleanup_targets(
+            specs=specs,
             pods=pods,
             volumes=volumes,
             images=images,
             configs=configs,
+            include_orphans=include_orphans,
         )
 
         if not plan.has_items():
@@ -373,7 +455,7 @@ def register(app: typer.Typer) -> CommandMap:
             total_bytes_freed += bytes_freed
             results.add_row("Cleaning images...", f"[ok]✓ {count} image(s) removed[/]")
 
-        if plan.config_files:
+        if plan.config_files or plan.config_dirs:
             count = _clean_configs(plan, backup=backup_config)
             results.add_row("Cleaning configs...", f"[ok]✓ {count} file(s) removed[/]")
 

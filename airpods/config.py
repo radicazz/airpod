@@ -309,21 +309,24 @@ def _service_spec_from_config(
     )
 
 
-def _load_service_specs(config: Optional[AirpodsConfig] = None) -> List[ServiceSpec]:
+def load_service_specs(
+    config: Optional[AirpodsConfig] = None, *, include_disabled: bool = False
+) -> List[ServiceSpec]:
+    """Return service specs from config, optionally including disabled services."""
     config = config or get_config()
     specs: List[ServiceSpec] = []
     for name, service in config.services.items():
-        if not service.enabled:
+        if not include_disabled and not service.enabled:
             continue
         specs.append(_service_spec_from_config(name, service, config))
     return specs
 
 
-REGISTRY = ServiceRegistry(_load_service_specs())
+REGISTRY = ServiceRegistry(load_service_specs())
 
 
 def reload_registry(config: Optional[AirpodsConfig] = None) -> ServiceRegistry:
     """Rebuild the service registry from the latest configuration."""
     global REGISTRY
-    REGISTRY = ServiceRegistry(_load_service_specs(config))
+    REGISTRY = ServiceRegistry(load_service_specs(config))
     return REGISTRY

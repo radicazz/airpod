@@ -258,9 +258,12 @@ def _maybe_install_custom_node_requirements(
         return
 
     container_dir = _comfyui_custom_nodes_container_dir(comfyui_spec)
+    container_id = None
+    if isinstance(inspect, dict):
+        container_id = inspect.get("Id") or inspect.get("ID")
     target_dir = f"{container_dir.rstrip('/')}/.airpods/site-packages"
     requirements = custom_nodes_module.collect_requirements(
-        nodes, container_custom_nodes_dir=container_dir
+        nodes, container_custom_nodes_dir=container_dir, container_id=container_id
     )
     if not requirements:
         return
@@ -271,15 +274,25 @@ def _maybe_install_custom_node_requirements(
             container_name=comfyui_spec.container,
             requirements=requirements,
             target_dir=target_dir,
+            container_id=container_id,
         )
 
-    installed = sum(1 for result in results if result.action == "installed")
+    installed = sum(
+        1 for result in results if result.action in {"installed", "installed-user"}
+    )
+    fallbacks = [result for result in results if result.action == "installed-user"]
     errors = [result for result in results if result.action == "error"]
 
     if installed:
         console.print(f"[ok]Installed {installed} custom node requirement(s)[/]")
     elif verbose:
         console.print("[info]No custom node requirements installed[/]")
+
+    if fallbacks:
+        console.print(
+            "[warn]Custom node requirements installed to user site-packages; "
+            "reinstall if the container is recreated.[/]"
+        )
 
     if errors:
         for result in errors:
