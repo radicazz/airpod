@@ -70,6 +70,7 @@ Planned features and improvements for AirPods, organized by priority.
 - [ ] Review and finalize ComfyUI service spec
 - [ ] Add to default configuration
 - [ ] Support custom workflows and model management
+- [x] Config-based custom node installs (git/local + requirements)
 - [ ] Document integration and usage
 - [ ] Test GPU access and workspace volumes
 
@@ -144,6 +145,7 @@ Planned features and improvements for AirPods, organized by priority.
 - [x] Backup/restore functionality
 - [x] Shell completion support
 - [x] Comprehensive test suite with CI
+- [x] Config-based ComfyUI custom node installs
 
 ---
 

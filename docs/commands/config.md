@@ -170,6 +170,23 @@ OLLAMA_ORIGINS = "*"
 OLLAMA_HOST = "0.0.0.0"
 ```
 
+## ComfyUI Custom Nodes
+
+Configure ComfyUI custom nodes via `services.comfyui.custom_nodes.install`. Entries support either a git repo or a local path.
+
+```toml
+[services.comfyui.custom_nodes]
+install = [
+  { name = "comfyui-gguf", repo = "https://github.com/radicazz/comfyui-gguf", ref = "main", requirements = "requirements.txt" },
+  { name = "local-node", path = "custom_nodes/local-node", requirements = "requirements.txt" }
+]
+```
+
+Notes:
+- `repo` entries are cloned into the `comfyui_custom_nodes` volume (requires `git` on PATH).
+- `path` entries must exist; relative paths resolve under `$AIRPODS_HOME`.
+- `requirements` defaults to `requirements.txt` and are installed inside the running ComfyUI container.
+
 ## Network Configuration
 
 Services can use network aliases for cleaner inter-service communication:

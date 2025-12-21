@@ -12,6 +12,7 @@ Here's a few important features:
 - NVIDIA GPU support (with multiple CUDA versions available)
 - Highly configurable through `toml` configs
 - Easily download ComfyUI & Ollama models from the CLI
+- Config-driven ComfyUI custom nodes (git or local path) with auto-installed requirements
 - Supports `Docker` & `Podman`
 
 The following services are currently supported:
