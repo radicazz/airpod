@@ -343,20 +343,28 @@ def comfyui_workflows_dir() -> Path:
         "comfyui/basedir"
     )
     basedir_candidate = basedir_root / "user" / "default" / "workflows"
-    if basedir_candidate.exists():
-        return basedir_candidate
 
     workspace_root = comfyui_workspace_dir()
     workspace_candidate = workspace_root / "ComfyUI" / "user" / "default" / "workflows"
-    if workspace_candidate.exists():
-        return workspace_candidate
 
     # Some installs may place user data directly under the workspace root.
     alt_candidate = workspace_root / "user" / "default" / "workflows"
+
+    # Prefer existing layouts first.
+    if basedir_candidate.exists():
+        return basedir_candidate
+    if workspace_candidate.exists():
+        return workspace_candidate
     if alt_candidate.exists():
         return alt_candidate
 
-    return workspace_root
+    # Fall back to the configured layout, even if it doesn't exist yet.
+    spec = config_module.REGISTRY.get("comfyui")
+    mount_targets = {vol.target for vol in spec.volumes} if spec else set()
+    if "/basedir" in mount_targets:
+        return basedir_candidate
+
+    return workspace_candidate
 
 
 def comfyui_models_dir() -> Path:
@@ -843,14 +851,35 @@ def _resolve_workflow_path_restricted(workflow: str) -> Path:
 
 
 def _discover_repo_workflows() -> list[Path]:
-    """Find workflow JSON files in the repo's plugins/comfyui/workflows directory."""
+    """Find bundled workflow JSON files (repo checkout or installed package)."""
+    candidates: list[Path] = []
+
     repo_root = paths.detect_repo_root()
-    if not repo_root:
-        return []
-    workflows_dir = repo_root / "plugins" / "comfyui" / "workflows"
-    if not workflows_dir.exists():
-        return []
-    return sorted(workflows_dir.glob("*.json"))
+    if repo_root:
+        candidates.append(repo_root / "plugins" / "comfyui" / "workflows")
+
+    module_path = Path(__file__).resolve()
+    # Look for a packaged plugins/ directory near the installed module location.
+    for parent in module_path.parents[:6]:
+        candidates.append(parent / "plugins" / "comfyui" / "workflows")
+
+    seen: set[Path] = set()
+    for workflows_dir in candidates:
+        try:
+            resolved = workflows_dir.resolve()
+        except OSError:
+            resolved = workflows_dir
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+
+        if not workflows_dir.exists():
+            continue
+        workflows = sorted(workflows_dir.glob("*.json"))
+        if workflows:
+            return workflows
+
+    return []
 
 
 @workflows_app.command(name="add", context_settings=COMMAND_CONTEXT)
@@ -890,6 +919,9 @@ def add_cmd(
                 "[warn]No workflows found in plugins/comfyui/workflows/ directory[/]"
             )
             return
+        console.print(
+            f"[info]Bundled workflows located at {repo_workflows[0].parent}[/]"
+        )
 
         table = Table(show_header=True, show_edge=False, padding=(0, 2))
         table.add_column("#", style="dim", justify="right", width=3)
@@ -928,7 +960,7 @@ def add_cmd(
             )
 
         shutil.copy2(source_path, dest)
-        console.print(f"[ok]✓ Imported: {dest_name}[/]")
+        console.print(f"[ok]✓ Imported: {dest_name} -> {dest}[/]")
 
         # Check for companion TOML file
         toml_file = source_path.with_suffix(".toml")
@@ -963,7 +995,7 @@ def add_cmd(
             _download_to_path(
                 source, dest, overwrite=overwrite, timeout_s=60, retries=2
             )
-            console.print(f"[ok]✓ Imported: {filename}[/]")
+            console.print(f"[ok]✓ Imported: {filename} -> {dest}[/]")
         except DownloadError as exc:
             console.print(f"[error]✗ Download failed: {exc}[/]")
             raise typer.Exit(1)
@@ -981,6 +1013,7 @@ def add_cmd(
         raise typer.BadParameter(
             "no workflows found in repo plugins/comfyui/workflows/ directory"
         )
+    console.print(f"[info]Bundled workflows located at {repo_workflows[0].parent}[/]")
 
     # Search for workflow by name (with or without .json)
     search_name = source if source.lower().endswith(".json") else f"{source}.json"
@@ -1005,7 +1038,7 @@ def add_cmd(
         )
 
     shutil.copy2(matched, dest)
-    console.print(f"[ok]✓ Imported: {dest_name}[/]")
+    console.print(f"[ok]✓ Imported: {dest_name} -> {dest}[/]")
 
     # Check for companion TOML file
     toml_file = matched.with_suffix(".toml")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -114,6 +115,78 @@ CommandArgScalar = Union[str, int, float, bool]
 CommandArgValue = Union[CommandArgScalar, List[Union[str, int, float]]]
 
 
+class CustomNodeInstall(BaseModel):
+    name: str
+    repo: Optional[str] = None
+    path: Optional[str] = None
+    ref: Optional[str] = None
+    requirements: Optional[str] = "requirements.txt"
+    enabled: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("custom node name cannot be empty")
+        return cleaned
+
+    @field_validator("repo")
+    @classmethod
+    def normalize_repo(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("path")
+    @classmethod
+    def normalize_path(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        if not cleaned:
+            return None
+        from airpods import state
+
+        path = Path(cleaned).expanduser()
+        if not path.is_absolute():
+            path = (state.state_root() / path).resolve()
+        return str(path)
+
+    @field_validator("ref")
+    @classmethod
+    def normalize_ref(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("requirements")
+    @classmethod
+    def normalize_requirements(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "CustomNodeInstall":
+        if bool(self.repo) == bool(self.path):
+            raise ValueError(
+                "custom node must set exactly one of repo or path (services.comfyui.custom_nodes.install)"
+            )
+        if self.path:
+            path = Path(self.path)
+            if not path.exists():
+                raise ValueError(f"custom node path not found: {path}")
+        return self
+
+
+class CustomNodesConfig(BaseModel):
+    install: List[CustomNodeInstall] = Field(default_factory=list)
+
+
 class ServiceConfig(BaseModel):
     enabled: bool = True
     image: str
@@ -134,6 +207,7 @@ class ServiceConfig(BaseModel):
     entrypoint_override: Optional[List[str]] = None
     default_model: Optional[str] = None
     default_model_url: Optional[str] = None
+    custom_nodes: Optional[CustomNodesConfig] = None
 
     model_config = ConfigDict(extra="ignore")
 

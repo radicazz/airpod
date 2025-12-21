@@ -7,7 +7,6 @@ This directory contains ComfyUI custom nodes and workflows that are part of the 
 ```
 plugins/comfyui/
 ├── custom_nodes/         # Custom nodes synced to ComfyUI
-│   ├── comfyui-gguf/    # GGUF support (submodule)
 │   └── comfyui-airpods/  # Airpods integration nodes
 └── workflows/           # Example workflows with model mappings
     ├── flux-dev-gguf-simple.json
@@ -17,6 +16,7 @@ plugins/comfyui/
 ## Custom Nodes
 
 Custom nodes in `custom_nodes/` are automatically synced to ComfyUI's `custom_nodes` directory when you run `airpods start comfyui`.
+Additional nodes can be installed via `services.comfyui.custom_nodes.install` in `config.toml`.
 
 Custom nodes can be in two formats:
 

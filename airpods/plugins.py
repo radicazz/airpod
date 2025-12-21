@@ -154,7 +154,9 @@ def sync_plugins(force: bool = False, prune: bool = True) -> int:
     return synced
 
 
-def sync_comfyui_plugins(force: bool = False, prune: bool = True) -> int:
+def sync_comfyui_plugins(
+    force: bool = False, prune: bool = True, keep: set[str] | None = None
+) -> int:
     """Sync bundled ComfyUI custom nodes to the comfyui_custom_nodes volume directory.
 
     ComfyUI custom nodes can be either:
@@ -164,6 +166,7 @@ def sync_comfyui_plugins(force: bool = False, prune: bool = True) -> int:
     Args:
         force: If True, overwrite existing custom nodes even if they're newer.
         prune: If True, delete custom nodes in target that no longer exist in source.
+        keep: Optional set of relative paths to preserve during pruning.
 
     Returns:
         Number of custom nodes synced (directories + files).
@@ -239,15 +242,20 @@ def sync_comfyui_plugins(force: bool = False, prune: bool = True) -> int:
             synced += 1
 
     # Prune removed custom nodes
+    keep_set = {entry for entry in (keep or set()) if entry}
     if prune:
         for item in target_dir.iterdir():
             rel_path = item.relative_to(target_dir)
+            if rel_path.as_posix() in keep_set:
+                continue
             if item.is_dir():
                 if rel_path not in desired_dirs and not item.name.startswith(
                     (".", "_")
                 ):
                     shutil.rmtree(item)
             elif item.is_file() and item.name.endswith(".py"):
+                if rel_path.as_posix() in keep_set:
+                    continue
                 if rel_path not in desired_files and not item.name.startswith("_"):
                     item.unlink()
 

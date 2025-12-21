@@ -1,3 +1,0 @@
-[submodule "plugins/comfyui/custom_nodes/comfyui-gguf"]
-	path = plugins/comfyui/custom_nodes/comfyui-gguf
-	url = https://github.com/radicazz/comfyui-gguf

@@ -1,12 +1,20 @@
 [project]
 name = "airpods"
-version = "0.22.1"
-description = "Rich, user-friendly CLI for orchestrating local AI services with Podman."
+version = "0.22.2"
+description = "User friendly CLI for creating & running popular AI services with ease."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "airpods contributors" }]
-keywords = ["cli", "comfyui", "local-ai", "ollama", "open-webui", "podman"]
+keywords = [
+  "cli",
+  "comfyui",
+  "local-ai",
+  "ollama",
+  "open-webui",
+  "podman",
+  "docker",
+]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",
@@ -59,12 +67,14 @@ packages = ["airpods"]
 [tool.hatch.build.targets.wheel.force-include]
 "plugins/open-webui" = "plugins/open-webui"
 "plugins/comfyui" = "plugins/comfyui"
+"plugins/comfyui/workflows" = "plugins/comfyui/workflows"
 
 [tool.hatch.build.targets.sdist]
 include = [
   "airpods",
   "plugins/open-webui",
   "plugins/comfyui",
+  "plugins/comfyui/workflows",
   "tests",
   "README.md",
   "LICENSE",

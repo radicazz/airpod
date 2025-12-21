@@ -90,6 +90,7 @@ def _maybe_sync_plugins(
     specs: list[ServiceSpec],
     *,
     verbose: bool,
+    keep_custom_nodes: set[str] | None = None,
 ) -> tuple[int, int]:
     """Sync Open WebUI + ComfyUI plugins for requested services.
 
@@ -110,7 +111,7 @@ def _maybe_sync_plugins(
 
     if any(s.name == "comfyui" for s in specs):
         with status_spinner("Syncing ComfyUI custom nodes"):
-            synced_comfyui = plugins.sync_comfyui_plugins()
+            synced_comfyui = plugins.sync_comfyui_plugins(keep=keep_custom_nodes)
 
         # Always show custom node status, even if nothing was synced
         total_nodes = plugins.count_comfyui_plugins()
@@ -181,6 +182,108 @@ def _maybe_import_webui_plugins(
             console.print(
                 f"[warn]Plugin auto-import failed: {e}. "
                 "Plugins are synced to filesystem and can be imported manually via UI.[/]"
+            )
+
+
+def _comfyui_custom_nodes_container_dir(spec: ServiceSpec) -> str:
+    for mount in spec.volumes:
+        if mount.target.endswith("/custom_nodes"):
+            return mount.target
+    return "/root/ComfyUI/custom_nodes"
+
+
+def _maybe_prepare_custom_nodes(
+    specs: list[ServiceSpec],
+    *,
+    nodes: list["CustomNodeInstall"],
+    verbose: bool,
+) -> tuple[list["CustomNodeInstall"], int]:
+    from airpods import custom_nodes as custom_nodes_module
+
+    comfyui_spec = next((spec for spec in specs if spec.name == "comfyui"), None)
+    if not comfyui_spec:
+        return [], 0
+
+    if not nodes:
+        return [], 0
+
+    with status_spinner("Preparing ComfyUI custom nodes"):
+        results = custom_nodes_module.prepare_custom_nodes(nodes, verbose=verbose)
+
+    created = sum(1 for result in results if result.action in {"copied", "cloned"})
+    errors = [result for result in results if result.action == "error"]
+    skipped = sum(1 for result in results if result.action == "skipped")
+
+    if created:
+        console.print(f"[ok]Prepared {created} custom node(s)[/]")
+    elif verbose:
+        console.print("[info]Custom nodes already up-to-date[/]")
+
+    if skipped and verbose:
+        console.print(f"[info]Skipped {skipped} custom node(s)[/]")
+
+    if errors:
+        for result in errors:
+            detail = f": {result.detail}" if result.detail else ""
+            console.print(f"[warn]Custom node {result.name} failed{detail}[/]")
+
+    return nodes, created
+
+
+def _maybe_install_custom_node_requirements(
+    specs: list[ServiceSpec],
+    *,
+    nodes: list["CustomNodeInstall"],
+    verbose: bool,
+) -> None:
+    from airpods import custom_nodes as custom_nodes_module
+
+    if not nodes:
+        return
+
+    comfyui_spec = next((spec for spec in specs if spec.name == "comfyui"), None)
+    if not comfyui_spec:
+        return
+
+    inspect = manager.runtime.container_inspect(comfyui_spec.container)
+    state = inspect.get("State") if isinstance(inspect, dict) else None
+    is_running = False
+    if isinstance(state, dict):
+        is_running = bool(state.get("Running")) or state.get("Status") == "running"
+    if not is_running:
+        if verbose:
+            console.print(
+                "[info]ComfyUI container not running; skipping custom node requirements[/]"
+            )
+        return
+
+    container_dir = _comfyui_custom_nodes_container_dir(comfyui_spec)
+    requirements = custom_nodes_module.collect_requirements(
+        nodes, container_custom_nodes_dir=container_dir
+    )
+    if not requirements:
+        return
+
+    with status_spinner("Installing ComfyUI custom node requirements"):
+        results = custom_nodes_module.install_requirements(
+            runtime=manager.runtime,
+            container_name=comfyui_spec.container,
+            requirements=requirements,
+        )
+
+    installed = sum(1 for result in results if result.action == "installed")
+    errors = [result for result in results if result.action == "error"]
+
+    if installed:
+        console.print(f"[ok]Installed {installed} custom node requirement(s)[/]")
+    elif verbose:
+        console.print("[info]No custom node requirements installed[/]")
+
+    if errors:
+        for result in errors:
+            detail = f": {result.detail}" if result.detail else ""
+            console.print(
+                f"[warn]Custom node requirements failed for {result.name}{detail}[/]"
             )
 
 
@@ -297,15 +400,37 @@ def register(app: typer.Typer) -> CommandMap:
 
         # Sync plugins even if services are already running.
         from airpods import plugins  # noqa: F401
+        from airpods import custom_nodes as custom_nodes_module
 
-        synced_webui, synced_comfyui = _maybe_sync_plugins(specs, verbose=verbose)
+        custom_nodes_list = (
+            custom_nodes_module.get_custom_node_specs()
+            if any(spec.name == "comfyui" for spec in specs)
+            else []
+        )
+        custom_nodes_keep = custom_nodes_module.custom_nodes_keep_entries(
+            custom_nodes_list
+        )
+
+        synced_webui, synced_comfyui = _maybe_sync_plugins(
+            specs, verbose=verbose, keep_custom_nodes=custom_nodes_keep
+        )
+        custom_nodes_list, custom_nodes_prepared = _maybe_prepare_custom_nodes(
+            specs, nodes=custom_nodes_list, verbose=verbose
+        )
 
         # If everything is already running, still auto-import Open WebUI plugins and exit.
         if not needs_start:
             _maybe_import_webui_plugins(specs, cli_config=cli_config, verbose=verbose)
+            _maybe_install_custom_node_requirements(
+                specs, nodes=custom_nodes_list, verbose=verbose
+            )
             if synced_comfyui > 0:
                 console.print(
                     "[warn]ComfyUI is already running; restart is required to load updated custom nodes.[/]"
+                )
+            if custom_nodes_prepared > 0:
+                console.print(
+                    "[warn]ComfyUI is already running; restart is required to load newly installed custom nodes.[/]"
                 )
 
             console.print("[ok]All services already running[/]")
@@ -481,6 +606,11 @@ def register(app: typer.Typer) -> CommandMap:
                 console.print(f"[error]✗ Failed to start {spec.name}: {e}[/]")
                 failed_services.append(spec.name)
                 continue
+
+        # Install custom node requirements once ComfyUI is running.
+        _maybe_install_custom_node_requirements(
+            specs, nodes=custom_nodes_list, verbose=verbose
+        )
 
         # If we're not waiting for readiness, return after pods are launched.
         if not wait:

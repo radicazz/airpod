@@ -802,4 +802,4 @@ def test_comfyui_workflows_dir_multiple_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(workflows_module, "comfyui_workspace_dir", fake_workspace_dir)
 
     result = comfyui_workflows_dir()
-    assert result == tmp_path
+    assert result == tmp_path / "ComfyUI" / "user" / "default" / "workflows"

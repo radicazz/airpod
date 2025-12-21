@@ -106,6 +106,16 @@ DEFAULT_CONFIG_DICT = {
                     "target": "/basedir/custom_nodes",
                 },
             },
+            "custom_nodes": {
+                "install": [
+                    {
+                        "name": "comfyui-gguf",
+                        "repo": "https://github.com/radicazz/comfyui-gguf",
+                        "ref": "main",
+                        "requirements": "requirements.txt",
+                    }
+                ]
+            },
             "gpu": {"enabled": True, "force_cpu": False},
             "health": {"path": "/", "expected_status": [200, 299]},
             "env": {},
