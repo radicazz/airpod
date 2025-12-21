@@ -172,9 +172,7 @@ def register(app: typer.Typer) -> CommandMap:
                     display = path.relative_to(custom_nodes_dir)
                 except ValueError:
                     display = path
-                console.print(
-                    f"[warn]- {display}: {', '.join(hits)}[/]"
-                )
+                console.print(f"[warn]- {display}: {', '.join(hits)}[/]")
             console.print(
                 "[dim]Update or remove the extensions above to silence warnings.[/]"
             )

@@ -12,6 +12,10 @@ Custom nodes that connect ComfyUI to local llama.cpp and Ollama HTTP APIs.
 - Ollama Generate (AirPods)
 - Ollama Chat (AirPods)
 
+### Text Utilities
+- Text Combine (AirPods)
+- Text Repeat (AirPods)
+
 ## Environment Variables
 
 ### llama.cpp

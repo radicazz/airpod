@@ -1,5 +1,5 @@
 """
-ComfyUI nodes that expose local llama.cpp and Ollama HTTP APIs.
+ComfyUI nodes for AirPods (llama.cpp/Ollama + utility text nodes).
 """
 
 from __future__ import annotations
@@ -18,6 +18,56 @@ OLLAMA_DEFAULT_URL = "http://localhost:11434"
 
 LLAMA_HINT = "Check that llama.cpp is running (airpods start llamacpp)."
 OLLAMA_HINT = "Check that Ollama is running (airpods start ollama)."
+
+
+class TextCombine:
+    """
+    A simple node that combines two text inputs with a separator.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "text1": ("STRING", {"multiline": True, "default": "Hello"}),
+                "text2": ("STRING", {"multiline": True, "default": "World"}),
+                "separator": ("STRING", {"default": " "}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "combine"
+    CATEGORY = "airpods/text"
+
+    def combine(self, text1, text2, separator):
+        """Combine two text strings with a separator."""
+        result = f"{text1}{separator}{text2}"
+        return (result,)
+
+
+class TextRepeat:
+    """
+    A simple node that repeats text a specified number of times.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "text": ("STRING", {"multiline": True, "default": "Hello"}),
+                "count": ("INT", {"default": 3, "min": 1, "max": 100}),
+                "separator": ("STRING", {"default": "\n"}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "repeat"
+    CATEGORY = "airpods/text"
+
+    def repeat(self, text, count, separator):
+        """Repeat text a specified number of times."""
+        result = separator.join([text] * count)
+        return (result,)
 
 
 def _llama_base_url(value: str | None) -> str:
@@ -71,7 +121,11 @@ class LlamaTextCompletion:
                 "model": ("STRING", {"default": ""}),
                 "base_url": (
                     "STRING",
-                    {"default": client.env_default(LLAMA_BASE_URL_ENV, LLAMA_DEFAULT_URL)},
+                    {
+                        "default": client.env_default(
+                            LLAMA_BASE_URL_ENV, LLAMA_DEFAULT_URL
+                        )
+                    },
                 ),
             },
         }
@@ -134,7 +188,11 @@ class LlamaChatCompletion:
                 "model": ("STRING", {"default": ""}),
                 "base_url": (
                     "STRING",
-                    {"default": client.env_default(LLAMA_BASE_URL_ENV, LLAMA_DEFAULT_URL)},
+                    {
+                        "default": client.env_default(
+                            LLAMA_BASE_URL_ENV, LLAMA_DEFAULT_URL
+                        )
+                    },
                 ),
             },
         }
@@ -201,7 +259,11 @@ class OllamaGenerate:
                 "stream": ("BOOLEAN", {"default": False}),
                 "base_url": (
                     "STRING",
-                    {"default": client.env_default(OLLAMA_BASE_URL_ENV, OLLAMA_DEFAULT_URL)},
+                    {
+                        "default": client.env_default(
+                            OLLAMA_BASE_URL_ENV, OLLAMA_DEFAULT_URL
+                        )
+                    },
                 ),
             },
         }
@@ -266,7 +328,11 @@ class OllamaChat:
                 "stream": ("BOOLEAN", {"default": False}),
                 "base_url": (
                     "STRING",
-                    {"default": client.env_default(OLLAMA_BASE_URL_ENV, OLLAMA_DEFAULT_URL)},
+                    {
+                        "default": client.env_default(
+                            OLLAMA_BASE_URL_ENV, OLLAMA_DEFAULT_URL
+                        )
+                    },
                 ),
             },
         }

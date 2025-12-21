@@ -114,9 +114,7 @@ def request_json(
 
     if resp.status >= 400:
         excerpt = raw[:200]
-        raise RuntimeError(
-            f"Request failed ({resp.status}): {excerpt}. {hint}"
-        )
+        raise RuntimeError(f"Request failed ({resp.status}): {excerpt}. {hint}")
 
     try:
         data = json.loads(raw) if raw else {}

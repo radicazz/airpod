@@ -1,6 +1,6 @@
 # ComfyUI Custom Nodes
 
-This directory contains custom nodes that will be automatically synced to ComfyUI's `custom_nodes` directory when you run `airpods start`.
+This directory contains custom nodes that will be automatically synced to ComfyUI's `custom_nodes` directory when you run `airpods start`. Any user nodes you place here will be copied into ComfyUI on sync.
 
 ## Structure
 
