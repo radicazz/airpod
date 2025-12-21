@@ -27,7 +27,7 @@
 - Image registry normalization to `ghcr.io/ggml-org/llama.cpp`.
 
 **Still Pending**
-- ComfyUI custom node (`plugins/comfyui/airpods_gguf/`) for llama.cpp HTTP API.
+- ComfyUI custom nodes (`plugins/comfyui/comfyui_airpods_tools/`) for llama.cpp HTTP API.
 - Optional docs covering Open WebUI + llama.cpp backend wiring and ComfyUI workflow examples.
 
 ## Concrete Service Decisions (Implemented)
@@ -158,7 +158,7 @@ If a separate command is preferred, introduce `airpods gguf` with the same subco
 
 ## ComfyUI Integration (Pending)
 
-- Custom node package: `plugins/comfyui/airpods_gguf/`
+- Custom node package: `plugins/comfyui/comfyui_airpods_tools/`
 - Node uses llama.cpp HTTP endpoints and returns text to downstream nodes.
 - Required config/env to reach the service:
   - `AIRPODS_LLAMACPP_URL` defaulting to `http://localhost:11435/v1`
