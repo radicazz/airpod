@@ -271,6 +271,24 @@ def collect_requirements(
     return requirements
 
 
+def _is_permission_error(detail: str) -> bool:
+    """Check if error is due to permission denied."""
+    lowered = detail.lower()
+    return (
+        "permission denied" in lowered
+        or "errno 13" in lowered
+        or "read-only file system" in lowered
+    )
+
+
+def _is_externally_managed_error(detail: str) -> bool:
+    """Check if error is due to externally managed environment."""
+    lowered = detail.lower()
+    return (
+        "externally-managed-environment" in lowered or "externally managed" in lowered
+    )
+
+
 def install_requirements(
     *,
     runtime,
@@ -282,6 +300,7 @@ def install_requirements(
     """Install requirements inside a running container."""
     results: list[CustomNodeResult] = []
     install_target = target_dir.rstrip("/")
+
     for req in requirements:
 
         def run_pip(args: list[str]) -> subprocess.CompletedProcess:
@@ -292,21 +311,6 @@ def install_requirements(
                 text=True,
                 timeout=300,
                 check=False,
-            )
-
-        def is_permission(detail: str) -> bool:
-            lowered = detail.lower()
-            return (
-                "permission denied" in lowered
-                or "errno 13" in lowered
-                or "read-only file system" in lowered
-            )
-
-        def is_externally_managed(detail: str) -> bool:
-            lowered = detail.lower()
-            return (
-                "externally-managed-environment" in lowered
-                or "externally managed" in lowered
             )
 
         base_args = [
@@ -329,7 +333,7 @@ def install_requirements(
 
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
-            if is_externally_managed(detail):
+            if _is_externally_managed_error(detail):
                 result = run_pip(base_args + ["--break-system-packages"])
                 if result.returncode == 0:
                     req.marker_path.parent.mkdir(parents=True, exist_ok=True)
@@ -340,7 +344,7 @@ def install_requirements(
                     continue
                 detail = (result.stderr or result.stdout or "").strip()
 
-            if is_permission(detail):
+            if _is_permission_error(detail):
                 user_args = [
                     "python3",
                     "-m",
@@ -354,7 +358,7 @@ def install_requirements(
                 fallback = run_pip(user_args)
                 if fallback.returncode != 0:
                     fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
-                    if is_externally_managed(fallback_detail):
+                    if _is_externally_managed_error(fallback_detail):
                         fallback = run_pip(user_args + ["--break-system-packages"])
                         if fallback.returncode == 0:
                             req.marker_path.parent.mkdir(parents=True, exist_ok=True)
