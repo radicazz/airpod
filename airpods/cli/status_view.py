@@ -4,6 +4,7 @@ This module handles the display logic for the `status` command, including:
 - Rendering Rich tables with pod information
 - HTTP health checks for running services
 - Port binding resolution and URL formatting
+- Enhanced status detection with image availability checks
 """
 
 from __future__ import annotations
@@ -55,8 +56,50 @@ def _format_uptime(started_at: str) -> str:
     return "-"
 
 
+def _format_time_since(timestamp: str) -> str:
+    """Format time since a timestamp (e.g., for 'stopped' or 'finished' times).
+
+    Args:
+        timestamp: Container timestamp string from podman inspect (e.g., FinishedAt)
+
+    Returns:
+        Formatted time string (e.g., "5m ago", "2h ago") or "-"
+    """
+    if not timestamp or timestamp == "0001-01-01T00:00:00Z":
+        return "-"
+    try:
+        # Try ISO format first (more common in newer podman/docker)
+        try:
+            finished = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            delta = now - finished
+        except (ValueError, TypeError):
+            # Fall back to podman inspect format
+            parts = timestamp.split()
+            if len(parts) >= 2:
+                dt_str = f"{parts[0]} {parts[1].split('.')[0]}"
+                finished = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+                now = datetime.now()
+                delta = now - finished
+            else:
+                return "-"
+
+        total_seconds = int(delta.total_seconds())
+        if total_seconds < 60:
+            return f"{total_seconds}s ago"
+        elif total_seconds < 3600:
+            return f"{total_seconds // 60}m ago"
+        elif total_seconds < 86400:
+            return f"{total_seconds // 3600}h ago"
+        else:
+            return f"{total_seconds // 86400}d ago"
+    except (ValueError, IndexError, OSError):
+        pass
+    return "-"
+
+
 def render_status(specs: List[ServiceSpec]) -> None:
-    """Render the pod status table.
+    """Render the pod status table with enhanced state detection.
 
     Args:
         specs: List of service specifications to check status for.
@@ -64,6 +107,14 @@ def render_status(specs: List[ServiceSpec]) -> None:
     Note:
         manager.pod_status_rows() returns a dict mapping pod names to status info,
         or an empty dict if no pods are running.
+
+        Enhanced status detection distinguishes between:
+        - "not pulled": image not available locally
+        - "created": pod exists but container never started
+        - "stopped": container was running but is now exited
+        - "degraded": running but health check failed
+        - "failed": container crashed (exit code != 0)
+        - running with health status
     """
     pod_rows = manager.pod_status_rows()
     if pod_rows is None:
@@ -71,26 +122,40 @@ def render_status(specs: List[ServiceSpec]) -> None:
     table = ui.themed_table()
     table.add_column("Service")
     table.add_column("Status")
-    table.add_column("Uptime", justify="right")
+    table.add_column("Time", justify="right")
     table.add_column("Info", no_wrap=False)
 
     for spec in specs:
         row = pod_rows.get(spec.pod) if pod_rows else None
         if not row:
-            table.add_row(spec.name, "[warn]absent", "-", "-")
+            # Pod doesn't exist - check if image is pulled
+            image_exists = manager.runtime.image_exists(spec.image)
+            if not image_exists:
+                table.add_row(spec.name, "[muted]not pulled", "-", "-")
+            else:
+                table.add_row(spec.name, "[warn]stopped", "-", "-")
             continue
 
         status = row.get("Status", "?")
 
         uptime = "-"
+        finished_at = "-"
+        exit_code = 0
+        restart_count = 0
+
         inspect = manager.runtime.container_inspect(spec.container)
-        if (
-            inspect
-            and "State" in inspect
-            and "StartedAt" in inspect["State"]
-            and inspect["State"]["StartedAt"]
-        ):
-            uptime = _format_uptime(inspect["State"]["StartedAt"])
+        if inspect and "State" in inspect:
+            state = inspect["State"]
+            # Get started time for running containers
+            if "StartedAt" in state and state["StartedAt"]:
+                uptime = _format_uptime(state["StartedAt"])
+            # Get finished time for exited containers
+            if "FinishedAt" in state and state["FinishedAt"]:
+                finished_at = _format_time_since(state["FinishedAt"])
+            # Get exit code
+            exit_code = state.get("ExitCode", 0)
+            # Get restart count
+            restart_count = inspect.get("RestartCount", 0)
 
         if status == "Running":
             port_bindings = manager.service_ports(spec)
@@ -102,15 +167,41 @@ def render_status(specs: List[ServiceSpec]) -> None:
         elif status == "Exited":
             port_bindings = manager.service_ports(spec)
             ports_display = format_port_bindings(port_bindings)
-            # Check if this service was ever actually started vs just created/exited immediately
+
+            # Determine status based on exit code and history
             if uptime == "-" or uptime == "0s":
-                table.add_row(spec.name, "[muted]Never started", uptime, ports_display)
+                status_text = "[muted]created"
+                time_display = "-"
+            elif exit_code != 0:
+                status_text = f"[error]failed (exit {exit_code})"
+                time_display = finished_at if finished_at != "-" else uptime
+            elif restart_count > 3:
+                status_text = f"[error]crash loop ({restart_count} restarts)"
+                time_display = finished_at if finished_at != "-" else "-"
+            elif restart_count > 0:
+                status_text = f"[warn]restarting ({restart_count})"
+                time_display = finished_at if finished_at != "-" else "-"
             else:
-                table.add_row(spec.name, f"[warn]{status}", uptime, ports_display)
+                status_text = "[warn]stopped"
+                time_display = finished_at if finished_at != "-" else uptime
+
+            table.add_row(spec.name, status_text, time_display, ports_display)
         else:
             table.add_row(spec.name, f"[warn]{status}", uptime, "-")
 
     console.print(table)
+    _print_status_legend()
+
+
+def _print_status_legend() -> None:
+    """Print a brief status legend for user reference."""
+    console.print()
+    console.print("[muted]Status legend:[/]")
+    console.print("  [ok]200[/] or [ok]code[/] – Service responding (green = healthy)")
+    console.print("  [warn]code[/] or [warn]error[/] – Service not responding (yellow)")
+    console.print("  [error]failed[/] – Container crashed or exit code != 0 (red)")
+    console.print("  [muted]created[/] – Pod exists, container never started (gray)")
+    console.print("  [muted]not pulled[/] – Image not downloaded yet (gray)")
 
 
 def collect_host_ports(spec: ServiceSpec, port_bindings: dict[str, Any]) -> List[int]:

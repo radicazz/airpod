@@ -51,7 +51,7 @@ Run `airpods --help` for all available commands and options.
 
 ### Installation
 
-Install `airpods` with `uv`:
+Install `airpods` with `uv` from [Releases](https://github.com/radicazz/airpods/releases) or:
 
 ```bash
 # This is the nighly installation.
