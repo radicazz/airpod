@@ -1,11 +1,11 @@
 # Agents & Plan
 
 ## Intent
-Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via container runtimes (Podman or Docker). Services are configurable via TOML files with template support. Services: Ollama (GGUF-capable), Open WebUI wired to Ollama, and ComfyUI (using yanwk/comfyui-boot community image; future plan to fork and build custom).
+Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as the `airpods` command via uv tools) that orchestrates local AI services via container runtimes (Podman or Docker). Services are configurable via TOML files with template support. Services: Ollama, Open WebUI, ComfyUI (provider/CUDA selectable), and llama.cpp server (GGUF-capable).
 
 ## Command Surface
-- Global options: `-v/--version` prints the CLI version; `-h/--help` shows the custom help view plus alias table.
-- `start [service...]`: Ensures volumes/images, then launches pods (default both) while explaining when volumes, pods, or containers are reused vs newly created. Shows download confirmation with sizes and disk space checks (skip with `--yes`). Waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds, with health-less services marked ready once their pod is running. Skips recreation if containers are already running. GPU auto-detected and attached to Ollama; CPU fallback allowed. `--pre-fetch` downloads service images and exits without starting containers for ahead-of-time cache warmups. Service aliases: `comfy`/`comfyui`/`comfy-ui` → `comfyui`. Exposed aliases: `up`, `run`.
+- Global options: `-v/--version` prints the CLI version; `-V/--verbose` enables detailed output; `-h/--help` shows the custom help view plus alias table.
+- `start [service...]`: Ensures volumes/images, then launches pods (default: all enabled services) while explaining when volumes, pods, or containers are reused vs newly created. Shows download confirmation with sizes and disk space checks (skip with `--yes`). When `--wait` is set, waits for each service to report healthy (HTTP ping when available) for up to `cli.startup_timeout` seconds, polling every `cli.startup_check_interval` seconds; services without HTTP health are treated as ready when their pod is running. Skips recreation if containers are already running. GPU auto-detected and attached when enabled; CPU fallback allowed. `--pre-fetch` downloads service images and exits without starting containers for ahead-of-time cache warmups. Service aliases: `comfy`/`comfyui`/`comfy-ui` → `comfyui`, `llama`/`llama-cpp`/`llama.cpp` → `llamacpp`. Exposed aliases: `up`, `run`.
 - `stop [service...]`: Graceful stop; optional removal of pods while preserving volumes by default, with an interactive confirmation prompt before destructive removal. Exposed aliases: `down`.
 - `status [service...]`: Compact Rich table (Service / Status / Info) summarizing HTTP health plus friendly URLs for running pods, or pod status + port summaries for stopped ones; redundant columns (pod name, uptime, counts) were removed for readability. Exposed aliases: `ps`, `info`.
 - `logs [service...]`: Tail logs for specified services or all; supports follow/since/lines.
@@ -14,6 +14,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `search <query>`: Search Ollama's registry for models by name/tag
   - `pull <model>`: Download a model to local Ollama instance
   - `list` (aliases: `ls`): Show installed models with sizes
+  - `info <model>`: Show detailed information about an installed model
   - `remove <model>`: Delete a local model
 - `workflows`: ComfyUI workflow and model utilities:
   - `add [source]`: Import workflow JSON files from local paths, URLs, or repo (plugins/comfyui/workflows). Auto-detects and copies companion TOML mapping files. When no source is specified, lists available workflows from repo. Supports `--sync` to automatically download models after import and `--overwrite` to replace existing workflows.
@@ -67,13 +68,14 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `airpods/docker.py` – Docker subprocess wrapper mirroring Podman API. Docker's pod abstraction is a logical grouping with host networking.
   - All CLI commands route through `ServiceManager.runtime` for container operations, ensuring runtime-agnostic behavior.
 - Supporting modules: `airpods/system.py` (env checks), `airpods/gpu.py` (runtime-aware GPU detection with separate flags for Docker/Podman), `airpods/config.py` (service specs from config), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `airpods/paths.py` (repo root detection), `airpods/state.py` (state directory management), `podcli` (uv/python wrapper script).
+- Supporting modules: `airpods/system.py` (env checks), `airpods/gpu.py` (runtime-aware GPU detection), `airpods/cuda.py` (CUDA selection helpers), `airpods/comfyui.py` (provider/image selection), `airpods/gguf.py` (GGUF download helpers), `airpods/config.py` (service specs from config), `airpods/logging.py` (Rich console themes), `airpods/ui.py` (Rich tables/panels), `airpods/paths.py` (repo root detection), `airpods/state.py` (state directory management). CLI entrypoint is `airpods.cli:main` via `[project.scripts]` in `pyproject.toml`.
 - Pod specs dynamically generated from configuration. Service metadata includes `needs_webui_secret` flag for automatic secret injection. Easy to extend services via config files.
 - All pods use host networking (`--network host`) for simplicity and maximum compatibility. Services communicate via `localhost:port`. For Docker, "pods" are logical groupings tracked by naming convention; for Podman, they are actual pod resources.
 - Errors surfaced with clear remediation (install runtime, start podman machine, check GPU drivers, etc.).
 
 ## Data & Images
-- Volumes: `airpods_ollama_data`, `airpods_webui_data`, `airpods_comfyui_data`, and `comfyui_custom_nodes` are bind-mounted under `$AIRPODS_HOME/volumes/` (e.g., `$AIRPODS_HOME/volumes/airpods_ollama_data`), while the ComfyUI workspace bind (`bind://comfyui/workspace`) lives at `$AIRPODS_HOME/volumes/comfyui/workspace`.
-- Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`, `docker.io/yanwk/comfyui-boot:cu128-slim`; pulled during `start` (or via `start --pre-fetch`).
+- Volumes: bind mounts under `$AIRPODS_HOME/volumes/` (resolved from `bind://...`) including `airpods_ollama_data`, `airpods_webui_data`, `webui_plugins`, `airpods_comfyui_data`, `comfyui_custom_nodes`, `comfyui/workspace`, and the shared GGUF store `airpods_models/gguf`.
+- Images: `docker.io/ollama/ollama:latest`, `ghcr.io/open-webui/open-webui:latest`, ComfyUI image selected by `runtime.cuda_version` + `runtime.comfyui_provider`, and `ghcr.io/ggml-org/llama.cpp:server` (or `:server-cuda` when GPU-enabled); pulled during `start` (or via `start --pre-fetch`).
 - Secrets: Open WebUI secret persisted at `$AIRPODS_HOME/configs/webui_secret` (or `$XDG_CONFIG_HOME/airpods/configs/webui_secret` or `~/.config/airpods/configs/webui_secret`) during `start` when Open WebUI is enabled, injected via the `needs_webui_secret` flag.
 - Networking: All services use host networking. Open WebUI targets Ollama via `http://localhost:11434` (configurable via templates).
 - Configuration: Optional `config.toml` in `configs/` subdirectory at `$AIRPODS_HOME` or XDG paths; deep-merged with defaults. All airpods configuration files (config.toml, webui_secret, etc.) are stored together in the `configs/` subdirectory.

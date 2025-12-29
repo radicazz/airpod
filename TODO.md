@@ -6,23 +6,25 @@ Planned features and improvements for AirPods, organized by priority.
 
 ### Container Abstraction (Docker Support)
 
-**Status:** IN PROGRESS
-**Details:** `ContainerRuntime` Protocol exists in `airpods/runtime.py`; Docker implementation needed.
+**Status:** DONE
+**Details:** Docker is supported via `DockerRuntime` + `airpods/docker.py`, with runtime auto-detect + `runtime.prefer` selection.
 
-- [ ] Implement `DockerRuntime` class + `airpods/docker.py` module
-- [ ] Handle Docker-specific differences (networking, volumes, GPU)
-- [ ] Test runtime detection and fallback (`runtime.prefer` config)
-- [ ] Update `doctor` for both Podman/Docker checks
-- [ ] Document runtime selection and migration
+- [x] Implement `DockerRuntime` class + `airpods/docker.py` module
+- [x] Handle Docker-specific differences (networking, volumes, GPU)
+- [x] Test runtime detection and fallback (`runtime.prefer` config)
+- [x] Update `doctor` for both Podman/Docker checks
+- [x] Document runtime selection and migration
 
 ### Open WebUI Plugin Improvements
 
-**Status:** FUNCTIONAL
-**Reference:** See `plugins/open-webui/` for current examples.
+**Status:** PARTIAL
+**Reference:** Plugin sync + best-effort auto-import are implemented; see `plugins/open-webui/` for examples.
 
+- [x] Plugin sync to WebUI volume during `start`
+- [x] Best-effort auto-import of plugins into Open WebUI DB (Admin > Functions)
 - [ ] Add more plugin examples (Action, Pipeline, advanced Tools)
-- [ ] Create scaffolding: `airpods plugins create <name> --type ...`
-- [ ] Add lifecycle management: `enable|disable|update <name>`
+- [ ] Create scaffolding: `airpods plugins create <name> --type ...` (new command surface)
+- [ ] Add lifecycle management: `enable|disable|update <name>` (new command surface)
 - [ ] Improve validation and error reporting
 - [ ] Support CLI-based valve configuration
 - [ ] Add testing framework/helpers
@@ -46,30 +48,31 @@ Planned features and improvements for AirPods, organized by priority.
 
 ### llama.cpp Service
 
-**Status:** PLANNED
-**Reference:** See `docs/plans/service-llama.md`
+**Status:** FUNCTIONAL
+**Reference:** Service is implemented and enabled by default; docs plan still contains roadmap items.
 
-- [ ] Extend schema for `command_args` mapping (CLI-configured services)
-- [ ] Implement template resolution and CLI flag rendering
-- [ ] Add `llamacpp` + `llamacpp-ui` service specs
-- [ ] Support GGUF model volume and persistence
-- [ ] Handle CPU vs GPU image selection
-- [ ] Add health checks (`/health`, `/v1/models`)
-- [ ] Account for model load times in startup
+- [x] Extend schema for `command_args` mapping (CLI-configured services)
+- [x] Implement template resolution and CLI flag rendering
+- [x] Add `llamacpp` service spec (server)
+- [x] Support GGUF model volume and persistence
+- [x] Handle CPU vs GPU image selection
+- [x] Add health checks (`/health`)
+- [x] Account for model load times in startup (startup timeout knobs + polling)
 - [ ] Document Open WebUI integration
 - [ ] Test quantized models and context configuration
 - [ ] Add example configs (chat, embeddings, multi-backend)
+- [ ] Evaluate/define `llamacpp-ui` (if still desired)
 
 ## Medium Priority
 
 ### ComfyUI Service Completion
 
-**Status:** PLANNED
+**Status:** PARTIAL
 **Reference:** See `docs/plans/service-comfyui.md`
 
-- [ ] Review and finalize ComfyUI service spec
-- [ ] Add to default configuration
-- [ ] Support custom workflows and model management
+- [x] ComfyUI service spec present and enabled by default
+- [x] Add to default configuration
+- [x] Workflows command + model sync utilities (`airpods workflows ...`)
 - [x] Config-based custom node installs (git/local + requirements)
 - [ ] Document integration and usage
 - [ ] Test GPU access and workspace volumes
@@ -100,7 +103,7 @@ Planned features and improvements for AirPods, organized by priority.
 
 - [ ] Expand unit test coverage (target >90%)
 - [ ] Add integration tests with real Podman/Docker
-- [ ] Create CI workflow for multi-runtime testing
+- [ ] Create CI coverage for multi-runtime smoke tests (Podman + Docker)
 - [ ] Performance benchmarks for startup times
 - [ ] Plugin import/validation test suite
 
@@ -109,7 +112,6 @@ Planned features and improvements for AirPods, organized by priority.
 - [ ] Publish to PyPI with automated releases
 - [ ] Installation guide for uv tools
 - [ ] Build Docker/Podman image for running AirPods itself
-- [ ] Shell completion generation (bash/zsh/fish)
 - [ ] Package for Homebrew, AUR, etc.
 
 ### Documentation
@@ -128,7 +130,7 @@ Planned features and improvements for AirPods, organized by priority.
 - [ ] Resource limits config (CPU, memory)
 - [ ] Service dependencies and startup ordering
 - [ ] Multi-machine orchestration (remote Podman/Docker)
-- [ ] Backup/restore for volumes and configs
+- [ ] Optional full volume backup/restore (including large model binaries), beyond current configs + metadata backup
 - [ ] Migration tools for config format changes
 - [ ] Air-gapped/offline installation and image caching
 - [ ] Opt-in telemetry and usage statistics
@@ -137,6 +139,7 @@ Planned features and improvements for AirPods, organized by priority.
 
 - [x] Core CLI (`start`, `stop`, `status`, `logs`, `doctor`, `config`, `clean`)
 - [x] Podman-based orchestration
+- [x] Docker-based orchestration
 - [x] Configuration system (TOML + templates)
 - [x] Ollama service with GPU detection
 - [x] Open WebUI with secret management
@@ -146,6 +149,7 @@ Planned features and improvements for AirPods, organized by priority.
 - [x] Shell completion support
 - [x] Comprehensive test suite with CI
 - [x] Config-based ComfyUI custom node installs
+- [x] llama.cpp service (GGUF server)
 
 ---
 
