@@ -345,6 +345,7 @@ def register(app: typer.Typer) -> CommandMap:
         service: Optional[list[str]] = typer.Argument(
             None,
             help="Services to clean (default: all).",
+            metavar="service",
             shell_complete=service_name_completion,
         ),
         all_: bool = typer.Option(

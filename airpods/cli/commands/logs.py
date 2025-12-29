@@ -29,6 +29,7 @@ def register(app: typer.Typer) -> CommandMap:
         service: Optional[list[str]] = typer.Argument(
             None,
             help="Services to show logs for (default: all).",
+            metavar="service",
             shell_complete=service_name_completion,
         ),
         follow: bool = typer.Option(False, "--follow", "-f", help="Follow logs."),

@@ -27,6 +27,7 @@ def register(app: typer.Typer) -> CommandMap:
         service: Optional[list[str]] = typer.Argument(
             None,
             help="Services to report (default: all).",
+            metavar="service",
             shell_complete=service_name_completion,
         ),
         watch: Optional[float] = typer.Option(

@@ -10,6 +10,7 @@ This module handles custom help display including:
 from __future__ import annotations
 
 import inspect
+import re
 from typing import Iterable, Sequence
 
 import click
@@ -256,7 +257,7 @@ def format_argument_hint(param: click.Argument) -> str:
     if not name:
         return ""
     normalized = name.replace("_", " ").strip()
-    normalized = normalized.replace(" ", "-").upper()
+    normalized = normalized.replace(" ", "-").lower()
     return f"<{normalized}>"
 
 
@@ -284,7 +285,34 @@ def _format_usage_line(ctx: typer.Context) -> str:
     usage = command.get_usage(ctx).strip()
     if usage.lower().startswith("usage:"):
         usage = usage[6:].strip()
-    return _normalize_command_text(usage)
+    return _normalize_command_text(_lowercase_usage_placeholders(ctx, usage))
+
+
+def _lowercase_usage_placeholders(ctx: typer.Context, usage: str) -> str:
+    if ctx.command is None:
+        return usage
+
+    # Lowercase any explicit <PLACEHOLDER> tokens in usage text.
+    usage = re.sub(r"<([^>]+)>", lambda match: f"<{match.group(1).lower()}>", usage)
+
+    # Lowercase parameter metavars rendered in uppercase by Click/Typer.
+    for param in ctx.command.params:
+        raw = param.metavar or param.human_readable_name or param.name or ""
+        if not raw:
+            continue
+        candidates = {
+            raw,
+            raw.replace("_", " "),
+            raw.replace("_", "-"),
+        }
+        for candidate in candidates:
+            upper = candidate.replace(" ", "-").upper()
+            if not upper:
+                continue
+            pattern = rf"(?<![A-Za-z0-9_-]){re.escape(upper)}(?![A-Za-z0-9_-])"
+            usage = re.sub(pattern, candidate.replace(" ", "-").lower(), usage)
+
+    return usage
 
 
 def _normalize_command_text(value: str | None) -> str:
