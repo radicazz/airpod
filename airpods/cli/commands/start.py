@@ -384,12 +384,25 @@ def register(app: typer.Typer) -> CommandMap:
         max_concurrent_pulls = 1 if sequential else cli_config.max_concurrent_pulls
 
         if pre_fetch:
+            specs_for_download: list[ServiceSpec] = []
+            for spec in specs:
+                exists = manager.runtime.image_exists(spec.image)
+                if exists is True:
+                    continue
+                specs_for_download.append(spec)
+            if not specs_for_download:
+                if verbose:
+                    console.print("[ok]All requested images are already present[/]")
+                return
             # Check for images that need to be downloaded and confirm with user
             if not yes:
-                if not _confirm_image_downloads(specs):
+                if not _confirm_image_downloads(specs_for_download):
                     console.print("[warn]Download cancelled by user[/]")
                     raise typer.Exit(code=0)
-            _pull_images_with_progress(specs, max_concurrent=max_concurrent_pulls)
+            _pull_images_with_progress(
+                specs_for_download,
+                max_concurrent=max_concurrent_pulls,
+            )
             return
 
         if not specs:
@@ -525,7 +538,12 @@ def register(app: typer.Typer) -> CommandMap:
                 )
             return spec
 
-        specs_for_download = [_effective_spec(spec) for spec in specs_to_start]
+        specs_for_download: list[ServiceSpec] = []
+        for spec in (_effective_spec(spec) for spec in specs_to_start):
+            exists = manager.runtime.image_exists(spec.image)
+            if exists is True:
+                continue
+            specs_for_download.append(spec)
 
         # Validate llama.cpp model presence before pulling images.
         needs_llamacpp = any(spec.name == "llamacpp" for spec in specs_to_start)
@@ -577,16 +595,19 @@ def register(app: typer.Typer) -> CommandMap:
                         )
                         raise typer.Exit(code=1)
 
-        # Check for images that need to be downloaded and confirm with user
-        if not yes:
-            if not _confirm_image_downloads(specs_for_download):
-                console.print("[warn]Download cancelled by user[/]")
-                raise typer.Exit(code=0)
+        if specs_for_download:
+            # Check for images that need to be downloaded and confirm with user
+            if not yes:
+                if not _confirm_image_downloads(specs_for_download):
+                    console.print("[warn]Download cancelled by user[/]")
+                    raise typer.Exit(code=0)
 
-        # Pull images with live progress so long pulls don't feel like a hang.
-        _pull_images_with_progress(
-            specs_for_download, max_concurrent=max_concurrent_pulls, verbose=verbose
-        )
+            # Pull images with live progress so long pulls don't feel like a hang.
+            _pull_images_with_progress(
+                specs_for_download, max_concurrent=max_concurrent_pulls, verbose=verbose
+            )
+        elif verbose:
+            console.print("[info]Images already present; skipping pulls[/]")
 
         # Start services with simple logging
         for spec in specs_to_start:
