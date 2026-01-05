@@ -319,6 +319,42 @@ def _find_comfyui_mount(target_suffix: str) -> Path | None:
     return None
 
 
+def _extract_flag_value(args: list[str], flag: str) -> str | None:
+    for idx, arg in enumerate(args):
+        if arg == flag and idx + 1 < len(args):
+            return args[idx + 1]
+    return None
+
+
+def _map_container_path_to_host(container_path: str) -> Path | None:
+    spec = config_module.REGISTRY.get("comfyui")
+    if not spec:
+        return None
+    for vol in spec.volumes:
+        target = vol.target.rstrip("/")
+        if container_path == target or container_path.startswith(f"{target}/"):
+            rel = Path(container_path).relative_to(target)
+            return Path(vol.source) / rel
+    return None
+
+
+def _comfyui_user_dir_container() -> str | None:
+    spec = config_module.REGISTRY.get("comfyui")
+    if not spec:
+        return None
+    if spec.command:
+        user_dir = _extract_flag_value(spec.command, "--user-directory")
+        if user_dir:
+            return user_dir
+    # Fall back to provider defaults based on mounts.
+    targets = {vol.target for vol in spec.volumes}
+    if any(target.startswith("/basedir") for target in targets):
+        return "/basedir/user"
+    if any(target.startswith("/workspace") for target in targets):
+        return "/workspace/user"
+    return None
+
+
 def comfyui_workspace_dir() -> Path:
     path = _find_comfyui_mount("/workspace")
     if path:
@@ -338,6 +374,15 @@ def comfyui_workflows_dir() -> Path:
     """
 
     from airpods import state
+
+    user_dir_container = _comfyui_user_dir_container()
+    if user_dir_container:
+        host_user_dir = _map_container_path_to_host(user_dir_container)
+        if host_user_dir:
+            preferred = host_user_dir / "default" / "workflows"
+            if preferred.exists():
+                return preferred
+            return preferred
 
     basedir_root = _find_comfyui_mount("/basedir") or state.resolve_volume_path(
         "comfyui/basedir"
@@ -756,8 +801,22 @@ def list_cmd(
             total = len(refs)
             synced = total - missing_count
 
+            mapping_dict: dict[str, dict[str, str]] = {}
+            mapping_path = path.with_suffix(".toml")
+            if mapping_path.exists():
+                try:
+                    mapping_dict = _load_mapping(mapping_path)
+                except typer.BadParameter:
+                    mapping_dict = {}
+
+            def _has_sync_info(ref: ModelRef) -> bool:
+                entry = mapping_dict.get(ref.filename) if mapping_dict else None
+                url = (entry or {}).get("url") or ref.url
+                folder = (entry or {}).get("folder") or ref.folder
+                return bool(url) and bool(folder)
+
             can_auto_sync = missing_count == 0 or all(
-                bool(ref.url) and bool(ref.folder) for ref in missing_refs
+                _has_sync_info(ref) for ref in missing_refs
             )
             auto_sync = "[ok]✓[/]" if can_auto_sync else "[error]✗[/]"
 
@@ -1059,8 +1118,8 @@ def add_cmd(
 def sync_cmd(
     ctx: typer.Context,
     help_: bool = command_help_option(),
-    workflow: str = typer.Argument(
-        ..., help="Workflow JSON file (path or workspace-relative)."
+    workflow: Optional[str] = typer.Argument(
+        None, help="Workflow JSON file (path or workspace-relative)."
     ),
     mapping: Optional[Path] = typer.Option(
         None,
@@ -1094,8 +1153,12 @@ def sync_cmd(
 
     Uses an optional local URL mapping file, and also supports workflow-embedded
     model metadata (directory + download URL) when present.
+    When no workflow is provided, lists available workflows.
     """
     maybe_show_command_help(ctx, help_)
+    if not workflow:
+        ctx.invoke(list_cmd)
+        return
 
     workflow_path = _resolve_workflow_path(workflow)
     data = json.loads(workflow_path.read_text(encoding="utf-8"))
@@ -1105,6 +1168,12 @@ def sync_cmd(
         return
 
     models_root = comfyui_models_dir()
+    if mapping is None:
+        auto_mapping = workflow_path.with_suffix(".toml")
+        if auto_mapping.exists():
+            mapping = auto_mapping
+            console.print(f"[info]Using mapping: {auto_mapping.name}[/]")
+
     mapping_dict = _load_mapping(mapping) if mapping else {}
 
     missing: list[tuple[ModelRef, Path, str | None, str]] = []

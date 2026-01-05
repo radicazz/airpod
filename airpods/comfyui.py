@@ -118,6 +118,14 @@ def get_comfyui_volumes(provider: ComfyProvider) -> Dict[str, Tuple[str, str]]:
     }
 
 
+def get_comfyui_user_dir(provider: ComfyProvider) -> str:
+    """Return the ComfyUI user directory inside the container."""
+    if provider == "mmartial":
+        return "/basedir/user"
+    # yanwk default layout
+    return "/workspace/user"
+
+
 def get_default_env(provider: ComfyProvider) -> Dict[str, str]:
     """Get default environment variables for the specified provider.
 

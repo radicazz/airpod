@@ -10,10 +10,12 @@ from airpods.configuration.schema import AirpodsConfig, ServiceConfig, CommandAr
 from airpods.services import ServiceRegistry, ServiceSpec, VolumeMount
 from airpods.cuda import select_cuda_version
 from airpods.comfyui import (
+    ComfyProvider,
+    get_comfyui_user_dir,
+    get_comfyui_volumes,
+    get_default_env,
     select_comfyui_image,
     select_provider,
-    get_default_env,
-    get_comfyui_volumes,
 )
 from airpods.system import detect_cuda_compute_capability
 from airpods.logging import console
@@ -194,6 +196,8 @@ def _get_comfyui_provider_env(config: AirpodsConfig) -> Dict[str, str]:
 def _service_spec_from_config(
     name: str, service: ServiceConfig, config: AirpodsConfig
 ) -> ServiceSpec:
+    provider: ComfyProvider | None = None
+
     # Handle ComfyUI provider-specific volumes
     if name == "comfyui":
         provider = _get_comfyui_provider(config)
@@ -232,11 +236,27 @@ def _service_spec_from_config(
     env = dict(service.env)
     if name == "comfyui":
         # Add provider-specific environment variables (mmartial needs extra env vars)
-        provider_env = _get_comfyui_provider_env(config)
+        provider_env = get_default_env(provider or _get_comfyui_provider(config))
         # User-configured env takes precedence over provider defaults
         for key, value in provider_env.items():
             if key not in env:
                 env[key] = value
+
+        # Ensure user data (workflows, settings) lives on the mounted workspace/basedir.
+        # Only yanwk needs this override; mmartial already uses /basedir.
+        if (provider or _get_comfyui_provider(config)) == "yanwk":
+            command_args = dict(service.command_args)
+            if "user_directory" not in command_args:
+                command_args["user_directory"] = get_comfyui_user_dir(
+                    provider or _get_comfyui_provider(config)
+                )
+                updates = {"command_args": command_args}
+                if not service.entrypoint_override:
+                    updates["entrypoint_override"] = [
+                        "bash",
+                        "/runner-scripts/entrypoint.sh",
+                    ]
+                service = service.model_copy(update=updates)
 
         custom_nodes_target = None
         for mount in volumes:
@@ -269,7 +289,7 @@ def _service_spec_from_config(
     # Set userns_mode for mmartial ComfyUI (needs keep-id for proper file ownership at pod level)
     userns_mode = None
     if name == "comfyui":
-        provider = _get_comfyui_provider(config)
+        provider = provider or _get_comfyui_provider(config)
         if provider == "mmartial":
             userns_mode = "keep-id"
 

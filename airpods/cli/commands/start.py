@@ -8,6 +8,7 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -190,6 +191,41 @@ def _comfyui_custom_nodes_container_dir(spec: ServiceSpec) -> str:
         if mount.target.endswith("/custom_nodes"):
             return mount.target
     return "/root/ComfyUI/custom_nodes"
+
+
+def _extract_flag_value(args: list[str], flag: str) -> str | None:
+    for idx, arg in enumerate(args):
+        if arg == flag and idx + 1 < len(args):
+            return args[idx + 1]
+    return None
+
+
+def _map_container_path_to_host(spec: ServiceSpec, container_path: str) -> Path | None:
+    for vol in spec.volumes:
+        target = vol.target.rstrip("/")
+        if container_path == target or container_path.startswith(f"{target}/"):
+            rel = Path(container_path).relative_to(target)
+            return Path(vol.source) / rel
+    return None
+
+
+def _ensure_comfyui_user_dirs(spec: ServiceSpec) -> None:
+    user_dir = _extract_flag_value(spec.command or [], "--user-directory")
+    if not user_dir:
+        targets = {vol.target for vol in spec.volumes}
+        if any(target.startswith("/basedir") for target in targets):
+            user_dir = "/basedir/user"
+        elif any(target.startswith("/workspace") for target in targets):
+            user_dir = "/workspace/user"
+        else:
+            return
+
+    host_user_dir = _map_container_path_to_host(spec, user_dir)
+    if not host_user_dir:
+        return
+
+    # Precreate user/workflows paths so the container doesn't create them as root.
+    (host_user_dir / "default" / "workflows").mkdir(parents=True, exist_ok=True)
 
 
 def _maybe_prepare_custom_nodes(
@@ -513,6 +549,10 @@ def register(app: typer.Typer) -> CommandMap:
         with status_spinner("Ensuring volumes"):
             volume_results = manager.ensure_volumes(specs_to_start)
         print_volume_status(volume_results, verbose=verbose)
+
+        for spec in specs_to_start:
+            if spec.name == "comfyui":
+                _ensure_comfyui_user_dirs(spec)
 
         # Plugins were already synced above for all requested services.
 

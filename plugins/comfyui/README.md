@@ -67,6 +67,12 @@ airpods workflows add flux-dev-gguf-simple
 
 # Import and automatically download required models
 airpods workflows add flux-dev-gguf-simple --sync
+
+# List saved workflows (same as "airpods workflows list")
+airpods workflows sync
+
+# Sync missing models for a workflow
+airpods workflows sync flux-dev-gguf-simple
 ```
 
 ### Workflow Format
@@ -81,6 +87,9 @@ Example TOML mapping:
 url = "https://huggingface.co/org/repo/resolve/main/model.safetensors"
 folder = "checkpoints"
 ```
+
+If a mapping TOML exists alongside a workflow (same name), `airpods workflows sync`
+will automatically use it without needing `--map`.
 
 ## Notes
 

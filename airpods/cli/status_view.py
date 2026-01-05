@@ -12,6 +12,7 @@ from __future__ import annotations
 import http.client
 import socket
 import time
+from functools import lru_cache
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
@@ -226,8 +227,30 @@ def collect_host_ports(spec: ServiceSpec, port_bindings: dict[str, Any]) -> List
 
 
 def format_host_urls(host_ports: List[int]) -> List[str]:
-    """Format user-friendly localhost URLs for each host port."""
-    return [f"http://localhost:{port}" for port in host_ports]
+    """Format user-friendly host URLs for each host port."""
+    host = _resolve_host_ip()
+    return [f"http://{host}:{port}" for port in host_ports]
+
+
+@lru_cache(maxsize=1)
+def _resolve_host_ip() -> str:
+    """Resolve the best-effort host IP for display in status output."""
+    for target in (("8.8.8.8", 80), ("1.1.1.1", 80)):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect(target)
+                ip = sock.getsockname()[0]
+                if ip and not ip.startswith(("127.", "0.")):
+                    return ip
+        except OSError:
+            continue
+    try:
+        hostname_ip = socket.gethostbyname(socket.gethostname())
+        if hostname_ip and not hostname_ip.startswith(("127.", "0.")):
+            return hostname_ip
+    except OSError:
+        pass
+    return "localhost"
 
 
 def format_port_bindings(port_bindings: dict[str, Any]) -> str:

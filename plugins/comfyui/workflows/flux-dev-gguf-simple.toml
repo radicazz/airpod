@@ -22,7 +22,7 @@ hash = ""
 hash_type = "SHA256"
 
 [models."ae.safetensors"]
-url = "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors?download=true"
+url = "https://hf-mirror.com/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors?download=true"
 folder = "vae"
 hash = ""
 hash_type = "SHA256"
