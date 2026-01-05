@@ -410,8 +410,6 @@ def comfyui_workflows_dir() -> Path:
     mount_targets = {vol.target for vol in spec.volumes} if spec else set()
     if "/basedir" in mount_targets:
         return basedir_candidate
-    if preferred is not None:
-        return preferred
 
     return workspace_candidate
 
