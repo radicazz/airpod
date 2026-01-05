@@ -375,6 +375,7 @@ def comfyui_workflows_dir() -> Path:
 
     from airpods import state
 
+    preferred: Path | None = None
     user_dir_container = _comfyui_user_dir_container()
     if user_dir_container:
         host_user_dir = _map_container_path_to_host(user_dir_container)
@@ -382,7 +383,6 @@ def comfyui_workflows_dir() -> Path:
             preferred = host_user_dir / "default" / "workflows"
             if preferred.exists():
                 return preferred
-            return preferred
 
     basedir_root = _find_comfyui_mount("/basedir") or state.resolve_volume_path(
         "comfyui/basedir"
@@ -402,12 +402,16 @@ def comfyui_workflows_dir() -> Path:
         return workspace_candidate
     if alt_candidate.exists():
         return alt_candidate
+    if preferred is not None and preferred.exists():
+        return preferred
 
     # Fall back to the configured layout, even if it doesn't exist yet.
     spec = config_module.REGISTRY.get("comfyui")
     mount_targets = {vol.target for vol in spec.volumes} if spec else set()
     if "/basedir" in mount_targets:
         return basedir_candidate
+    if preferred is not None:
+        return preferred
 
     return workspace_candidate
 
