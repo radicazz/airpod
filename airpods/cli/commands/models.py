@@ -35,6 +35,17 @@ def _models_root(
         show_command_help(ctx)
 
 
+@gguf_app.callback(invoke_without_command=True)
+def _gguf_root(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+) -> None:
+    """Entry point for the gguf command group."""
+    maybe_show_command_help(ctx, help_)
+    if ctx.invoked_subcommand is None:
+        show_command_help(ctx)
+
+
 def ensure_ollama_running() -> int:
     """
     Ensure Ollama service is running before executing model operations.

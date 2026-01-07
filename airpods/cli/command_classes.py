@@ -5,14 +5,48 @@ from __future__ import annotations
 import errno
 import os
 import sys
-from typing import Any, Optional, Sequence, TextIO, cast
+from typing import Any, Iterable, Optional, Sequence, TextIO, cast
 
 import click
 import typer
 from typer import rich_utils
 from typer.core import DEFAULT_MARKUP_MODE, MarkupMode, rich
 
-from .help import show_help_for_context
+from .common import HELP_OPTION_NAMES
+from .help import render_usage_error, show_help_for_context
+
+
+def _help_requested(args: Sequence[str]) -> bool:
+    return any(flag in args for flag in HELP_OPTION_NAMES)
+
+
+def _parameter_suggestions(
+    ctx: click.Context,
+    exc: click.MissingParameter,
+) -> list[str]:
+    param = exc.param
+    if param is None:
+        return []
+    shell_complete = getattr(param, "shell_complete", None)
+    if not callable(shell_complete):
+        return []
+    try:
+        items = shell_complete(ctx, param, "")
+    except Exception:
+        return []
+    suggestions = _normalize_completion_items(items)
+    return sorted(set(suggestions))
+
+
+def _normalize_completion_items(items: Iterable[Any]) -> list[str]:
+    results: list[str] = []
+    for item in items or []:
+        value = getattr(item, "value", None)
+        if value is None:
+            value = str(item)
+        if value:
+            results.append(value)
+    return results
 
 
 def _airpods_main(
@@ -84,20 +118,27 @@ def _airpods_main(
             from airpods.logging import console
 
             if isinstance(exc, click.UsageError):
-                # Show usage line and error message without the box
                 help_ctx = exc.ctx or click.get_current_context(silent=True)
-                if help_ctx is not None:
-                    usage = help_ctx.command.get_usage(help_ctx)
-                    console.print(f"[muted]{usage}[/]")
 
-                console.print(f"[error]Error:[/] {exc.format_message()}")
+                if _help_requested(args):
+                    if help_ctx is not None:
+                        show_help_for_context(help_ctx)
+                    sys.exit(0)
 
-                if help_ctx is not None:
-                    # Suggest --help instead of printing the full help
-                    command_name = help_ctx.command_path or "airpods"
-                    console.print(
-                        f"[info]Try '{command_name} --help' for more information.[/]"
-                    )
+                command_name = (
+                    help_ctx.command_path if help_ctx is not None else "airpods"
+                )
+                tip = f"Try '{command_name} --help' for more information."
+                suggestions = None
+                if isinstance(exc, click.MissingParameter) and help_ctx is not None:
+                    suggestions = _parameter_suggestions(help_ctx, exc)
+
+                render_usage_error(
+                    help_ctx,
+                    exc.format_message(),
+                    suggestions=suggestions,
+                    tip=tip,
+                )
             else:
                 # For other Click exceptions, use default formatting
                 if rich and rich_markup_mode is not None:

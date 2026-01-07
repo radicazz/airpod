@@ -126,6 +126,32 @@ def show_help_for_context(ctx: typer.Context) -> None:
         show_command_help(ctx)
 
 
+def render_usage_error(
+    ctx: typer.Context | None,
+    message: str,
+    *,
+    suggestions: Sequence[str] | None = None,
+    tip: str | None = None,
+) -> None:
+    """Render a themed usage error panel with optional suggestions."""
+    renderables: list = []
+    _append_section(renderables, "Error", Text(message, style="error"))
+
+    if ctx is not None:
+        usage_text = Text(f"  {_format_usage_line(ctx)}", style=PALETTE["fg"])
+        _append_section(renderables, "Usage", usage_text)
+
+    if suggestions:
+        _append_section(
+            renderables, "Suggestions", _build_suggestion_table(suggestions)
+        )
+
+    if tip:
+        _append_section(renderables, "Tip", Text(tip, style=PALETTE["fg"]))
+
+    _render_help_panel(renderables)
+
+
 def exit_with_help(
     ctx: typer.Context,
     *,
@@ -436,3 +462,27 @@ def _build_disabled_command_table(rows: list[tuple[str, str, str, str]]) -> Tabl
     for row in rows:
         table.add_row(*row)
     return table
+
+
+def _build_suggestion_table(items: Sequence[str]) -> Table:
+    suggestions = [item for item in items if item]
+    if not suggestions:
+        return ui.themed_grid(padding=(0, 3))
+
+    max_len = max(len(item) for item in suggestions)
+    column_width = max(10, max_len + 2)
+    max_columns = max(1, min(3, console.width // column_width))
+
+    table = ui.themed_grid(padding=(0, 3))
+    for _ in range(max_columns):
+        table.add_column(style="accent", no_wrap=True)
+
+    for row in _chunked(suggestions, max_columns):
+        padded = row + [""] * (max_columns - len(row))
+        table.add_row(*padded)
+
+    return table
+
+
+def _chunked(items: Sequence[str], size: int) -> list[list[str]]:
+    return [list(items[i : i + size]) for i in range(0, len(items), size)]
