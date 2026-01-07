@@ -10,7 +10,12 @@ import typer
 
 from airpods.logging import console
 
-from ..common import COMMAND_CONTEXT, ensure_runtime_available, resolve_services
+from ..common import (
+    COMMAND_CONTEXT,
+    ensure_runtime_available,
+    is_verbose_mode,
+    resolve_services,
+)
 from ..completions import service_name_completion
 from ..help import command_help_option, maybe_show_command_help
 from ..status_view import render_status
@@ -42,7 +47,7 @@ def register(app: typer.Typer) -> CommandMap:
             raise typer.BadParameter("watch interval must be positive.")
 
         def _run_once() -> None:
-            render_status(specs)
+            render_status(specs, show_legend=is_verbose_mode(ctx))
 
         if watch is None:
             _run_once()

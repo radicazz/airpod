@@ -99,11 +99,12 @@ def _format_time_since(timestamp: str) -> str:
     return "-"
 
 
-def render_status(specs: List[ServiceSpec]) -> None:
+def render_status(specs: List[ServiceSpec], *, show_legend: bool = True) -> None:
     """Render the pod status table with enhanced state detection.
 
     Args:
         specs: List of service specifications to check status for.
+        show_legend: Whether to print the status legend beneath the table.
 
     Note:
         manager.pod_status_rows() returns a dict mapping pod names to status info,
@@ -191,7 +192,8 @@ def render_status(specs: List[ServiceSpec]) -> None:
             table.add_row(spec.name, f"[warn]{status}", uptime, "-")
 
     console.print(table)
-    _print_status_legend()
+    if show_legend:
+        _print_status_legend()
 
 
 def _print_status_legend() -> None:
