@@ -13,7 +13,7 @@
   - ComfyUI as a workflow / graph UI.
   - Caddy as a reverse proxy and TLS terminator.
   - An optional file / notebook server (e.g. Jupyter or similar) for working with artifacts and data.
-- Provide simple, predictable lifecycle commands (`start`, `stop`, `status`, `logs`, `doctor`, `config`, and `clean`) with optional `start --pre-fetch` support for warming images ahead of time. These commands must:
+- Provide simple, predictable lifecycle commands (`start`, `stop`, `status`, `logs`, `doctor`, `config`, and `state`) with optional `start --pre-fetch` support for warming images ahead of time. These commands must:
   - Create and reuse volumes for persistent data.
   - Wire services together correctly (ports, networks, secrets, GPU access).
   - Fail with clear, actionable error messages when dependencies or containers are misconfigured.
@@ -26,5 +26,5 @@
 ## Design Priorities
 
 - Prefer configuration and templates (TOML + runtime resolution) over hard‑coding service details.
-- Keep commands safe by default (non‑destructive `start`, explicit `clean` for destructive actions).
+- Keep commands safe by default (non‑destructive `start`, explicit `state clean` for destructive actions).
 - Optimize for clarity and reproducibility: a new user should be able to go from zero to a working stack with a small number of documented commands.

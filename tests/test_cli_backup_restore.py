@@ -80,7 +80,9 @@ def test_backup_creates_archive(
     (volumes / "airpods_webui_data" / "webui.db").write_text("db")
     (volumes / "webui_plugins").mkdir()
 
-    result = runner.invoke(app, ["backup", "--dest", str(mock_state_dirs["home"])])
+    result = runner.invoke(
+        app, ["state", "backup", "--dest", str(mock_state_dirs["home"])]
+    )
 
     assert result.exit_code == 0
     archives = list(mock_state_dirs["home"].glob("*.tar.gz"))
@@ -88,24 +90,24 @@ def test_backup_creates_archive(
 
 
 def test_restore_without_archive_shows_help(runner, mock_podman):
-    result = runner.invoke(app, ["restore"])
+    result = runner.invoke(app, ["state", "restore"])
     combined = result.stdout or ""
     assert result.exit_code != 0
     assert "Missing argument" in combined or "ARCHIVE" in combined
     # Should suggest --help, not print full help
-    assert "Try 'airpods restore --help' for more information" in combined
+    assert "Try 'airpods state restore --help' for more information" in combined
     assert "Restore configs, DB, and metadata" not in combined
 
 
 def test_restore_missing_archive_errors(runner, mock_podman):
-    result = runner.invoke(app, ["restore", "missing.tar.gz"])
+    result = runner.invoke(app, ["state", "restore", "missing.tar.gz"])
     assert result.exit_code != 0
     assert "not found" in result.stdout.lower()
 
 
 def test_restore_successful(runner, mock_state_dirs, mock_podman):
     archive = _create_dummy_backup(mock_state_dirs["home"])
-    result = runner.invoke(app, ["restore", str(archive), "--skip-models"])
+    result = runner.invoke(app, ["state", "restore", str(archive), "--skip-models"])
 
     assert result.exit_code == 0
     restored_db = mock_state_dirs["volumes"] / "airpods_webui_data" / "webui.db"

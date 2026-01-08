@@ -23,7 +23,7 @@
 - `llamacpp` service spec with CPU/GPU image selection and `/health` probing.
 - GGUF store volume at `bind://airpods_models/gguf` with CLI helpers (`airpods models gguf pull/list/remove`).
 - Start-time model validation with optional auto-download of a default GGUF (`default_model_url`).
-- `doctor`, `backup`, and `clean` integrations for GGUF metadata and storage.
+- `doctor` and `state` integrations (backup/restore/clean) for GGUF metadata and storage.
 - Image registry normalization to `ghcr.io/ggml-org/llama.cpp`.
 
 **Still Pending**
@@ -141,9 +141,9 @@ This keeps GGUF artifacts separate from Ollama and ComfyUI models.
   - Tails `llamacpp` container logs.
 - `doctor`:
   - Validates llama.cpp image availability, port conflicts, and models path permissions.
-- `clean`:
+- `state clean`:
   - Removes `airpods_models/gguf` when `--volumes` or `--all` is used.
-- `backup` / `restore`:
+- `state backup` / `state restore`:
   - Include GGUF metadata directory (config + model index files if present), not the GGUF model binaries.
 - `config validate`:
   - Enforces that `command_args.model` is present or `default_model` is set.

@@ -66,17 +66,17 @@ def mock_dirs(tmp_path):
 
 def test_clean_no_options_shows_help(mock_podman):
     """Test that clean with no options shows error and suggests --help."""
-    result = runner.invoke(app, ["clean"])
+    result = runner.invoke(app, ["state", "clean"])
     assert result.exit_code == 1
     assert "No cleanup targets specified" in result.stdout
-    assert "Try 'airpods clean --help' for more information" in result.stdout
+    assert "Try 'airpods state clean --help' for more information" in result.stdout
     # Should NOT show full help text
     assert "Remove volumes, images, configs, and user data" not in result.stdout
 
 
 def test_clean_help_shows_usage():
     """Test that clean --help shows proper usage."""
-    result = runner.invoke(app, ["clean", "--help"])
+    result = runner.invoke(app, ["state", "clean", "--help"])
     assert result.exit_code == 0
     assert "Remove volumes, images, configs, and user data" in result.stdout
     assert "--all" in result.stdout
@@ -95,7 +95,7 @@ def test_clean_dry_run_shows_plan(
     mock_manager.runtime.list_volumes.return_value = ["airpods_ollama_data"]
     mock_manager.runtime.image_size.return_value = "3.5GB"
 
-    result = runner.invoke(app, ["clean", "--all", "--dry-run"])
+    result = runner.invoke(app, ["state", "clean", "--all", "--dry-run"])
     assert result.exit_code == 0
     assert "DRY RUN" in result.stdout
     assert "ollama" in result.stdout
@@ -105,7 +105,7 @@ def test_clean_dry_run_shows_plan(
 
 def test_clean_nothing_to_clean(mock_manager, mock_resolve_services, mock_podman):
     """Test clean when there's nothing to clean."""
-    result = runner.invoke(app, ["clean", "--all", "--force"])
+    result = runner.invoke(app, ["state", "clean", "--all", "--force"])
     assert result.exit_code == 0
     assert "Nothing to clean" in result.stdout
 
@@ -114,7 +114,7 @@ def test_clean_pods_only(mock_manager, mock_resolve_services, mock_podman):
     """Test cleaning only pods."""
     mock_manager.runtime.pod_exists.return_value = True
 
-    result = runner.invoke(app, ["clean", "--pods", "--force"])
+    result = runner.invoke(app, ["state", "clean", "--pods", "--force"])
     assert result.exit_code == 0
     assert "Cleaning pods" in result.stdout
     mock_manager.runtime.stop_pod.assert_called()
@@ -138,7 +138,7 @@ def test_clean_volumes_only(
     plugin_dir = volumes_dir / "webui_plugins"
     plugin_dir.mkdir()
 
-    result = runner.invoke(app, ["clean", "--volumes", "--force"])
+    result = runner.invoke(app, ["state", "clean", "--volumes", "--force"])
     assert result.exit_code == 0
     assert "Cleaning volumes" in result.stdout
     assert mock_manager.runtime.remove_volume.call_count == 2
@@ -149,7 +149,7 @@ def test_clean_images_only(mock_manager, mock_resolve_services, mock_podman):
     """Test cleaning only images."""
     mock_manager.runtime.image_size.return_value = "3.5GB"
 
-    result = runner.invoke(app, ["clean", "--images", "--force"])
+    result = runner.invoke(app, ["state", "clean", "--images", "--force"])
     assert result.exit_code == 0
     assert "Cleaning images" in result.stdout
     assert mock_manager.runtime.remove_image.call_count == 2
@@ -165,7 +165,7 @@ def test_clean_configs_only(
     config_file.write_text("test config")
     secret_file.write_text("secret")
 
-    result = runner.invoke(app, ["clean", "--configs", "--force"])
+    result = runner.invoke(app, ["state", "clean", "--configs", "--force"])
     assert result.exit_code == 0
     assert "Cleaning configs" in result.stdout
     assert not config_file.exists()
@@ -180,7 +180,9 @@ def test_clean_configs_with_backup(
     config_file = configs_dir / "config.toml"
     config_file.write_text("test config")
 
-    result = runner.invoke(app, ["clean", "--configs", "--force", "--backup-config"])
+    result = runner.invoke(
+        app, ["state", "clean", "--configs", "--force", "--backup-config"]
+    )
     assert result.exit_code == 0
     assert "Backed up config" in result.stdout
     assert not config_file.exists()
@@ -197,7 +199,9 @@ def test_clean_configs_without_backup(
     config_file = configs_dir / "config.toml"
     config_file.write_text("test config")
 
-    result = runner.invoke(app, ["clean", "--configs", "--force", "--no-backup-config"])
+    result = runner.invoke(
+        app, ["state", "clean", "--configs", "--force", "--no-backup-config"]
+    )
     assert result.exit_code == 0
     assert not config_file.exists()
     # Check that no backup file was created
@@ -213,7 +217,7 @@ def test_clean_requires_confirmation_without_force(
     mock_manager.runtime.pod_exists.return_value = True
     mock_confirm.return_value = True
 
-    result = runner.invoke(app, ["clean", "--pods"])
+    result = runner.invoke(app, ["state", "clean", "--pods"])
     assert result.exit_code == 0
     mock_confirm.assert_called_once()
 
@@ -226,7 +230,7 @@ def test_clean_cancelled_by_user(
     mock_manager.runtime.pod_exists.return_value = True
     mock_confirm.return_value = False
 
-    result = runner.invoke(app, ["clean", "--pods"])
+    result = runner.invoke(app, ["state", "clean", "--pods"])
     assert result.exit_code == 1
     assert "Cleanup cancelled" in result.stdout
 
@@ -240,7 +244,7 @@ def test_clean_all_flag(mock_manager, mock_resolve_services, mock_podman, mock_d
     configs_dir = mock_dirs["configs"]
     (configs_dir / "config.toml").write_text("test")
 
-    result = runner.invoke(app, ["clean", "--all", "--force"])
+    result = runner.invoke(app, ["state", "clean", "--all", "--force"])
     assert result.exit_code == 0
     assert "Cleaning pods" in result.stdout
     assert "Cleaning volumes" in result.stdout
@@ -256,7 +260,7 @@ def test_clean_handles_podman_errors(mock_manager, mock_resolve_services, mock_p
     mock_manager.runtime.pod_exists.return_value = True
     mock_manager.runtime.stop_pod.side_effect = ContainerRuntimeError("Test error")
 
-    result = runner.invoke(app, ["clean", "--pods", "--force"])
+    result = runner.invoke(app, ["state", "clean", "--pods", "--force"])
     assert result.exit_code == 0
     assert "Failed to remove" in result.stdout
 
@@ -270,7 +274,7 @@ def test_clean_handles_filesystem_errors(
     config_file.write_text("test")
 
     with patch("pathlib.Path.unlink", side_effect=OSError("Test error")):
-        result = runner.invoke(app, ["clean", "--configs", "--force"])
+        result = runner.invoke(app, ["state", "clean", "--configs", "--force"])
         assert result.exit_code == 0
         assert "Failed to remove" in result.stdout
 
@@ -283,7 +287,7 @@ def test_clean_configs_removes_config_dirs(
     restore_dir.mkdir()
     (restore_dir / "state.json").write_text("test")
 
-    result = runner.invoke(app, ["clean", "--configs", "--force"])
+    result = runner.invoke(app, ["state", "clean", "--configs", "--force"])
     assert result.exit_code == 0
     assert not restore_dir.exists()
 
@@ -311,7 +315,9 @@ def test_clean_service_scoped_volumes(mock_manager, mock_podman, mock_dirs):
     with patch(
         "airpods.cli.commands.clean._resolve_cleanup_specs", return_value=[spec]
     ):
-        result = runner.invoke(app, ["clean", "comfyui", "--volumes", "--force"])
+        result = runner.invoke(
+            app, ["state", "clean", "comfyui", "--volumes", "--force"]
+        )
 
     assert result.exit_code == 0
     assert not comfy_workspace.exists()
@@ -338,7 +344,9 @@ def test_clean_service_scoped_configs_only_removes_webui_secret(
     with patch(
         "airpods.cli.commands.clean._resolve_cleanup_specs", return_value=[spec]
     ):
-        result = runner.invoke(app, ["clean", "open-webui", "--configs", "--force"])
+        result = runner.invoke(
+            app, ["state", "clean", "open-webui", "--configs", "--force"]
+        )
 
     assert result.exit_code == 0
     assert config_file.exists()

@@ -25,17 +25,18 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `remove <workflow>`: Remove a saved workflow JSON file
   - `path`: Show workspace/workflows/models paths
   - `api`: Show API endpoints
-- `backup`: Create compressed archive of configs, Open WebUI database, plugins, and Ollama metadata (not model binaries). Supports custom destination, filename, and optional SQL dump.
-- `restore <archive>`: Unpack backup archive and restore configs, WebUI data, and metadata. Backs up existing data first. Includes flags to skip configs/db/plugins/models.
-- `clean`: Remove volumes, images, configs, and user data created by airpods. Offers granular control via flags:
-  - `--all/-a`: Remove everything (pods, volumes, images, configs)
-  - `--pods/-p`: Stop and remove all pods and containers
-  - `--volumes/-v`: Remove Podman volumes and bind mount directories
-  - `--images/-i`: Remove pulled container images
-  - `--configs/-c`: Remove config files (config.toml, webui_secret)
-  - `--force/-f`: Skip confirmation prompts
-  - `--dry-run`: Show what would be deleted without deleting
-  - `--backup-config`: Backup config.toml before deletion (default: enabled)
+- `state`: Manage local state with subcommands:
+  - `backup`: Create compressed archive of configs, Open WebUI database, plugins, and Ollama metadata (not model binaries). Supports custom destination, filename, and optional SQL dump.
+  - `restore <archive>`: Unpack backup archive and restore configs, WebUI data, and metadata. Backs up existing data first. Includes flags to skip configs/db/plugins/models.
+  - `clean`: Remove volumes, images, configs, and user data created by airpods. Offers granular control via flags:
+    - `--all/-a`: Remove everything (pods, volumes, images, configs)
+    - `--pods/-p`: Stop and remove all pods and containers
+    - `--volumes/-v`: Remove Podman volumes and bind mount directories
+    - `--images/-i`: Remove pulled container images
+    - `--configs/-c`: Remove config files (config.toml, webui_secret)
+    - `--force/-f`: Skip confirmation prompts
+    - `--dry-run`: Show what would be deleted without deleting
+    - `--backup-config`: Backup config.toml before deletion (default: enabled)
 - `config`: Manage configuration with subcommands:
   - `init`: Create default config file at `$AIRPODS_HOME/configs/config.toml`
   - `show`: Display current configuration (TOML or JSON format)
@@ -52,7 +53,7 @@ Provide a Rich + Typer-powered CLI (packaged under `airpods/cli/`, installed as 
   - `airpods/cli/common.py` – shared constants, service manager, and runtime/dependency helpers.
   - `airpods/cli/help.py` – Rich-powered help/alias rendering tables used by the root callback.
   - `airpods/cli/status_view.py` – status table + health probing utilities.
-  - `airpods/cli/commands/` – individual command modules (`backup`, `clean`, `config`, `doctor`, `logs`, `models`, `start`, `status`, `stop`, `workflows`) each registering via `commands.__init__.register`.
+  - `airpods/cli/commands/` – individual command modules (`backup`, `clean`, `config`, `doctor`, `logs`, `models`, `start`, `state`, `status`, `stop`, `workflows`) each registering via `commands.__init__.register`.
   - `airpods/cli/type_defs.py` – shared Typer command mapping type alias.
 - Configuration system:
   - `airpods/configuration/` – Pydantic-based config schema, loader, template resolver, and error types.

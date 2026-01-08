@@ -1,8 +1,8 @@
-# docs/commands/backup
+# docs/commands/state
 
-The `airpods backup` and `airpods restore` commands let you capture and rehydrate Open WebUI data, configuration, and Ollama metadata without copying massive model files.
+The `airpods state` command group manages local state. Use it to back up, restore, or clean stateful data without copying massive model files.
 
-## `airpods backup`
+## `airpods state backup`
 
 Create a compressed archive containing:
 - `configs/` (config.toml, webui_secret, other config files)
@@ -13,10 +13,10 @@ Create a compressed archive containing:
 
 ```bash
 # Default backup path: ./airpods-backup-<timestamp>.tar.gz
-airpods backup
+airpods state backup
 
 # Save to custom directory/name without SQL dump
-airpods backup --dest ~/backups --filename my-airpods.tgz --no-sql-dump
+airpods state backup --dest ~/backups --filename my-airpods.tgz --no-sql-dump
 ```
 
 **Options:**
@@ -27,20 +27,20 @@ airpods backup --dest ~/backups --filename my-airpods.tgz --no-sql-dump
 > [!NOTE]
 > Model binaries (GGUF, diffusion checkpoints, etc.) aren’t copied. Only metadata is captured so you can re-pull the exact models later.
 
-## `airpods restore`
+## `airpods state restore`
 
 Unpack a backup archive and restore configs, WebUI data, and metadata into fresh volumes.
 
 ```bash
 # Restore everything, backing up existing configs/db first
-airpods restore ~/backups/airpods-backup-20250712.tar.gz
+airpods state restore ~/backups/airpods-backup-20250712.tar.gz
 
 # Restore configs only, skipping database and metadata
-airpods restore archive.tgz --skip-db --skip-models
+airpods state restore archive.tgz --skip-db --skip-models
 ```
 
 **Arguments & Options:**
-- `<archive>`: Path to `.tar.gz` produced by `airpods backup`
+- `<archive>`: Path to `.tar.gz` produced by `airpods state backup`
 - `--backup-existing/--no-backup-existing`: Copy current configs/DB before overwrite (default: on)
 - `--skip-configs`: Don’t restore config files
 - `--skip-db`: Don’t restore Open WebUI database (raw copy or SQL dump)
@@ -57,8 +57,20 @@ airpods restore archive.tgz --skip-db --skip-models
 
 ### Best Practices
 - Run `airpods stop` before backing up to ensure clean SQLite copies
-- Store archives outside of `$AIRPODS_HOME` so they survive `airpods clean --all`
+- Store archives outside of `$AIRPODS_HOME` so they survive `airpods state clean --all`
 - After restoring, re-pull Ollama models using the metadata file saved in `configs/restores/`
 - Keep sensitive archives encrypted if they contain user data
 
-With these commands you can safely nuke volumes (`airpods clean --volumes`) and bring them back later without losing Open WebUI users, chats, or plugin state.
+With these commands you can safely nuke volumes (`airpods state clean --volumes`) and bring them back later without losing Open WebUI users, chats, or plugin state.
+
+## `airpods state clean`
+
+Remove volumes, images, configs, and user data created by airpods.
+
+```bash
+# Remove everything created by airpods
+airpods state clean --all
+
+# Remove only volumes
+airpods state clean --volumes
+```

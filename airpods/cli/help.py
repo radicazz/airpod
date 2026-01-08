@@ -29,8 +29,6 @@ COMMAND_DEPENDENCIES = {
     "logs": "any",
     "stop": "any",
     "status": "any",
-    "backup": "any",
-    "restore": "any",
 }
 
 
