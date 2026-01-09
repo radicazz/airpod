@@ -8,9 +8,7 @@ This directory contains ComfyUI custom nodes and workflows that are part of the 
 plugins/comfyui/
 ├── custom_nodes/         # Custom nodes synced to ComfyUI
 │   └── comfyui-airpods/  # Airpods integration nodes
-└── workflows/           # Example workflows with model mappings
-    ├── flux-dev-gguf-simple.json
-    └── flux-dev-gguf-simple.toml
+└── workflows/           # Optional repo workflows with model mappings
 ```
 
 ## Custom Nodes
@@ -63,16 +61,16 @@ Use the `airpods workflows add` command to import workflows into your ComfyUI wo
 airpods workflows add
 
 # Import a workflow from the repo
-airpods workflows add flux-dev-gguf-simple
+airpods workflows add my-workflow
 
 # Import and automatically download required models
-airpods workflows add flux-dev-gguf-simple --sync
+airpods workflows add my-workflow --sync
 
 # List saved workflows (same as "airpods workflows list")
 airpods workflows sync
 
 # Sync missing models for a workflow
-airpods workflows sync flux-dev-gguf-simple
+airpods workflows sync my-workflow
 ```
 
 ### Workflow Format

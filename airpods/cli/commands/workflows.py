@@ -959,13 +959,14 @@ def add_cmd(
 ) -> None:
     """Import workflow JSON files from local paths, URLs, or repo workflows.
 
-    If no source is provided, displays available workflows from plugins/comfyui/workflows.
+    If no source is provided, displays bundled workflows from plugins/comfyui/workflows
+    when present (forks can add their own). Otherwise, use a local file path or URL.
 
     Examples:
-        airpods workflows add flux-dev-gguf-simple
+        airpods workflows add my-workflow
         airpods workflows add /path/to/workflow.json
         airpods workflows add https://example.com/workflow.json
-        airpods workflows add flux-dev-gguf-simple --sync
+        airpods workflows add my-workflow --sync
     """
     maybe_show_command_help(ctx, help_)
 
@@ -977,7 +978,10 @@ def add_cmd(
         repo_workflows = _discover_repo_workflows()
         if not repo_workflows:
             console.print(
-                "[warn]No workflows found in plugins/comfyui/workflows/ directory[/]"
+                "[warn]No bundled workflows found in plugins/comfyui/workflows/.[/]"
+            )
+            console.print(
+                "[info]Use a local file path or URL, or add workflows in your fork.[/]"
             )
             return
         console.print(
@@ -1072,7 +1076,8 @@ def add_cmd(
     repo_workflows = _discover_repo_workflows()
     if not repo_workflows:
         raise typer.BadParameter(
-            "no workflows found in repo plugins/comfyui/workflows/ directory"
+            "no bundled workflows found in plugins/comfyui/workflows; "
+            "use a local file path/URL or add workflows in your fork"
         )
     console.print(f"[info]Bundled workflows located at {repo_workflows[0].parent}[/]")
 
