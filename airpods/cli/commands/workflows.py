@@ -844,6 +844,17 @@ def list_cmd(
         )
 
 
+@workflows_app.command(name="ls", context_settings=COMMAND_CONTEXT)
+def list_workflows_alias(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+    limit: int = typer.Option(50, "--limit", help="Maximum workflows to show."),
+) -> None:
+    """Alias for workflows list."""
+
+    list_cmd(ctx, help_, limit)
+
+
 @workflows_app.command(name="api", context_settings=COMMAND_CONTEXT)
 def api_cmd(
     ctx: typer.Context,

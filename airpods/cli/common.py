@@ -101,6 +101,7 @@ COMMAND_ALIASES = {
     "down": "stop",
     "ps": "status",
     "info": "status",
+    "health": "doctor",
 }
 
 SERVICE_NAME_ALIASES = {

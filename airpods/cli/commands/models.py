@@ -233,6 +233,16 @@ def list_models_cmd(
         raise typer.Exit(1)
 
 
+@models_app.command(name="ls", context_settings=COMMAND_CONTEXT)
+def list_models_alias(
+    ctx: typer.Context,
+    help_: bool = command_help_option(),
+) -> None:
+    """Alias for models list."""
+
+    list_models_cmd(ctx, help_)
+
+
 def _detect_model_source(model_spec: str) -> str:
     """
     Detect whether a model specification is for Ollama library or HuggingFace.

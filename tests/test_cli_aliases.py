@@ -76,3 +76,63 @@ def test_info_alias(mock_resolve, mock_ensure, mock_render, runner):
 
     result = runner.invoke(app, ["info"])
     assert result.exit_code == 0
+
+
+@patch("airpods.cli.commands.doctor.manager")
+@patch("airpods.cli.commands.doctor.detect_cuda_compute_capability")
+@patch("airpods.cli.commands.doctor.gpu_utils.detect_nvidia_container_toolkit")
+@patch("airpods.cli.commands.doctor.gpu_utils.check_cdi_available")
+@patch("airpods.cli.commands.doctor.check_for_update")
+def test_health_alias(
+    mock_update, mock_cdi, mock_toolkit, mock_cuda, mock_manager, runner
+):
+    """'health' aliases doctor."""
+    from airpods.services import EnvironmentReport
+    from airpods.system import CheckResult
+
+    mock_manager.report_environment.return_value = EnvironmentReport(
+        checks=[CheckResult(name="podman", ok=True, detail="available")],
+        gpu_available=False,
+        gpu_detail="CPU",
+    )
+    mock_cuda.return_value = (False, None, None)
+    mock_toolkit.return_value = (False, "not installed")
+    mock_cdi.return_value = False
+    mock_update.return_value = None
+
+    result = runner.invoke(app, ["health"])
+    assert result.exit_code == 0
+
+
+@patch("airpods.cli.commands.models.ensure_ollama_running")
+@patch("airpods.cli.commands.models.ollama.list_models")
+def test_models_ls_alias(mock_list, mock_ensure, runner):
+    """'models ls' aliases 'models list'."""
+    mock_ensure.return_value = 11434
+    mock_list.return_value = []
+
+    result = runner.invoke(app, ["models", "ls"])
+    assert result.exit_code == 0
+    assert "No models installed" in result.output
+
+
+@patch("airpods.cli.commands.workflows.comfyui_workflows_dir")
+def test_workflows_ls_alias(mock_dir, runner, tmp_path):
+    """'workflows ls' aliases 'workflows list'."""
+    mock_dir.return_value = tmp_path
+    (tmp_path / "test.json").write_text('{"nodes": []}')
+
+    result = runner.invoke(app, ["workflows", "ls"])
+    assert result.exit_code == 0
+
+
+@patch("airpods.cli.commands.models._gguf_dir")
+def test_gguf_ls_alias(mock_dir, runner, tmp_path):
+    """'models gguf ls' aliases 'models gguf list'."""
+    mock_dir.return_value = tmp_path
+    # Create an empty directory
+    tmp_path.mkdir(exist_ok=True)
+
+    result = runner.invoke(app, ["models", "gguf", "ls"])
+    assert result.exit_code == 0
+    assert "No GGUF models found" in result.output
